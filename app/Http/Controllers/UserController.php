@@ -60,4 +60,25 @@ class UserController extends Controller
         // Retourne true si l'email est disponible, false sinon
         return response()->json(['available' => !$exists]);
     }
+
+    public function toggleActivation(User $user)
+    {
+        // Ne pas désactiver un admin ou super-admin
+        if ($user->hasAnyRole(['Admin', 'Super-admin'])) {
+            return redirect()->back()->with('flash', [
+                'error' => 'Vous ne pouvez pas désactiver un administrateur.',
+            ]);
+        }
+
+        // Bascule l’état actif/inactif
+        $user->is_actif = !$user->is_actif;
+        $user->save();
+
+        return redirect()->back()->with('flash', [
+            'success' => 'Utilisateur mis à jour avec succès.',
+        ]);
+    }
+
+
+
 }

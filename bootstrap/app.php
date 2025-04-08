@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\AdminMiddleware;
+use App\Http\Middleware\SuperAdminMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -21,6 +23,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Ajout des alias pour les middlewares
         $middleware->alias([
             'throttle.login' => ThrottleRequests::class,
+            'admin' => AdminMiddleware::class,
+            'superadmin' => SuperAdminMiddleware::class,
         ]);
 
 

@@ -12,7 +12,7 @@ class AdminMiddleware
      */
     public function handle(Request $request, Closure $next)
     {
-        if (!Auth::check() || !Auth::user()->hasRole('admin')) {
+        if (!Auth::check() || !Auth::user()->hasRole('Admin')) {
             return redirect('/')->with('error', 'Accès non autorisé.');
         }
 

@@ -6,11 +6,17 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\UserController;
 use App\Models\User;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 // Route pour la page d'accueil
 Route::get('/', function () {
+
+    if (Auth::check()) {
+        return redirect()->route('dashboard'); // Redirige vers dashboard si connecté
+    }
+
     return Inertia::render('Home/HomePage', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
@@ -18,6 +24,8 @@ Route::get('/', function () {
         'phpVersion' => PHP_VERSION,
     ]);
 })->name('home');
+
+
 
 // Route pour le tableau de bord
 Route::get('/dashboard', [DashboardController::class, 'index'])
@@ -55,3 +63,20 @@ Route::middleware('auth')->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
 });
+
+
+// Active ou inactive un user
+Route::post('/users/{user}/toggle-activation', [UserController::class, 'toggleActivation'])
+    ->middleware(['auth'])
+    ->name('users.toggleActivation');
+
+
+
+// Accès au tableau des utilisateurs → Admin ou Super-admin
+Route::middleware(['auth', 'admin'])->get('/users', [UserController::class, 'index'])->name('users.index');
+Route::middleware(['auth', 'superadmin'])->get('/users', [UserController::class, 'index'])->name('users.index');
+
+// Désactiver un utilisateur → uniquement Super-admin
+Route::middleware(['auth', 'superadmin'])->post('/users/{user}/toggle-activation', [UserController::class, 'toggleActivation'])->name('users.toggleActivation');
+
+

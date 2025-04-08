@@ -1,6 +1,7 @@
 <script setup>
 import {ref} from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import { usePage } from '@inertiajs/vue3';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
@@ -12,7 +13,35 @@ const showingNavigationDropdown = ref(false);
 
 // Fonction utilitaire pour vérifier si une route est active
 const isActive = (route) => window.location.pathname === route;
+
+const page = usePage();
+
+
+// Fonction pour savoir si l'utilisateur est admin ou super-admin
+const isAdmin = () => {
+    const role = page.props.auth.user?.role;
+    return role === 'Admin' || role === 'Super-admin';
+};
+
+// Fonction pour récupérer le bon label
+const adminLabel = () => {
+    const role = page.props.auth.user?.role;
+    if (role === 'Super-admin') return 'Super-Admin';
+    if (role === 'Admin') return 'Admin';
+    return '';
+};
+
+
+
+
+
+
+/* TEST VOIR QUEL ROLE IL RENVOIT : console.log('Rôle de l’utilisateur :', page.props.auth.user?.role); */
+
 </script>
+
+
+
 
 <template>
     <div>
@@ -48,16 +77,22 @@ const isActive = (route) => window.location.pathname === route;
                                     Dashboard
                                 </NavLink>
 
-                                <NavLink :href="route('users.index')"
+                                <NavLink v-if="isAdmin()"
+                                         :href="route('users.index')"
                                          :active="route().current('users.index') ? 'btn-disabled' : 'btn'">
-                                    Admin
+                                    {{ adminLabel() }}
                                 </NavLink>
-                                <NavLink>
+
+
+
+                                <NavLink :href="route('profile.edit')"
+                                         :active="route().current('profile.edit')">
                                     Mon profil
                                 </NavLink>
-                                <NavLink>
+
+                               <!-- <NavLink>
                                     Mes évènements
-                                </NavLink>
+                                </NavLink>-->
                                 <NavLink><i class="fa-solid fa-comments"></i></NavLink>
                             </div>
                         </div>
@@ -87,9 +122,6 @@ const isActive = (route) => window.location.pathname === route;
 
                                     <!-- Contenu du dropdown -->
                                     <template #content>
-                                        <DropdownLink :href="route('profile.edit')">
-                                            Profile
-                                        </DropdownLink>
                                         <DropdownLink :href="route('logout')" method="post" as="button">
                                             Log Out <i class="fa-solid fa-right-from-bracket"></i>
                                         </DropdownLink>
