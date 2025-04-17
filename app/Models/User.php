@@ -101,4 +101,20 @@ class User extends Authenticatable
             }
         });
     }
+
+    public function eventsParticipated()
+    {
+        return $this->belongsToMany(Event::class, 'event_user')->withTimestamps();
+    }
+
+    // Deux users puisse communiuquer entre eux si ils ont un évent en commun
+    public function canMessageWith(User $otherUser): bool
+    {
+        return $this->eventsParticipated()
+            ->whereHas('participants', function ($q) use ($otherUser) {
+                $q->where('user_id', $otherUser->id);
+            })->exists();
+    }
+
+
 }

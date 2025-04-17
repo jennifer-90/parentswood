@@ -44,6 +44,10 @@ class AuthenticatedSessionController extends Controller
             ])->onlyInput('identifier');
         }
 
+        $request->user()->update([
+            'last_login' => now(),
+        ]);
+
         // Si l'authentification réussit
         $request->session()->regenerate();
 

@@ -8,26 +8,16 @@ return new class extends Migration {
     public function up()
     {
         Schema::create('messages', function (Blueprint $table) {
-            $table->id(); // Clé primaire
-            $table->unsignedBigInteger('sender_id'); // ID de l'expéditeur
-            $table->unsignedBigInteger('receiver_id'); // ID du destinataire
-            $table->string('objet')->nullable(); // Objet du message
-            $table->text('text'); // Contenu du message
-            $table->string('piece_jointe')->nullable(); // Chemin ou lien de la pièce jointe
-            $table->boolean('read_status')->default(0); // Statut de lecture (0 = non lu, 1 = lu)
-            $table->timestamps(); // Champs created_at et updated_at
+            $table->id();
+            $table->unsignedBigInteger('user_id'); // auteur du commentaire
+            $table->unsignedBigInteger('event_id'); // événement concerné
+            $table->text('text'); // contenu du commentaire
+            $table->timestamps();
 
-            // Clés étrangères
-            $table->foreign('sender_id') //expéditeur
-                ->references('id')
-                ->on('users')
-                ->onDelete('cascade'); // Si un utilisateur est supprimé, ses messages envoyés sont supprimés
-
-            $table->foreign('receiver_id') //destinataire
-                ->references('id')
-                ->on('users')
-                ->onDelete('cascade'); // Si un utilisateur est supprimé, ses messages reçus sont supprimés
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreign('event_id')->references('id')->on('events')->onDelete('cascade');
         });
+
     }
 
     public function down()

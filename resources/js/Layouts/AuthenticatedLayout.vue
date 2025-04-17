@@ -90,9 +90,10 @@ const adminLabel = () => {
                                     Mon profil
                                 </NavLink>
 
-                               <!-- <NavLink>
-                                    Mes évènements
-                                </NavLink>-->
+                                <NavLink :href="route('events.index')" :active="route().current('events.index')">
+                                    Évènements
+                                </NavLink>
+
                                 <NavLink><i class="fa-solid fa-comments"></i></NavLink>
                             </div>
                         </div>
