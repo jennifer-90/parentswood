@@ -86,7 +86,12 @@ DB_PASSWORD=''
   php artisan migrate
 ```
 
-### 🔹8. Lancer le serveur de développement Laravel
+### 🔹8. Créer le lien symbolique pour les fichiers uploadés (images, etc.)
+```bash
+  php artisan storage:link
+```
+
+### 🔹9. Lancer le serveur de développement Laravel
 
 ```bash
   php artisan serve
@@ -94,7 +99,7 @@ DB_PASSWORD=''
 
 ##### - Cela démarrera le serveur à l'adresse : http://localhost:8000.
 
-### 🔹9. Lancer le serveur Vite pour les assets front-end
+### 🔹10. Lancer le serveur Vite pour les assets front-end
 
 ##### - Dans un autre terminal, exécutez:
 

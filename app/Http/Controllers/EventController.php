@@ -53,7 +53,7 @@ class EventController extends Controller
     public function show(Event $event)
     {
         $messages = Message::where('event_id', $event->id)
-            ->with('user:id,pseudo') // <-- corrigé ici
+            ->with('user:id,pseudo')
             ->latest()
             ->get();
 
@@ -62,4 +62,5 @@ class EventController extends Controller
             'messages' => $messages,
         ]);
     }
+
 }
