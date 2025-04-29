@@ -63,4 +63,24 @@ class EventController extends Controller
         ]);
     }
 
+
+    public function adminIndex()
+    {
+        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+            return redirect()->back()->with('flash', [
+                'error' => 'Vous n\'êtes pas autorisé à accéder à cette page.',
+            ]);
+        }
+
+        $events = Event::with('creator:id,pseudo')
+            ->orderBy('created_at', 'desc')
+            ->paginate(20); // 20 événements par page
+
+        return Inertia::render('Events/AdminIndex', [
+            'events' => $events,
+        ]);
+    }
+
+
+
 }

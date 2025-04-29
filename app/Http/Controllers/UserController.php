@@ -5,42 +5,70 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Role;
+use App\Models\Event;
 use Inertia\Inertia;
 
 class UserController extends Controller
 {
     /**
-     * Affiche la liste des utilisateurs (réservée à Admin & Super-admin).
+     * Affiche le tableau d'administration : utilisateurs paginés + événements non paginés.
+     * Accessible uniquement aux Admins et Super-admins.
      */
-    public function index()
+    public function adminDashboard()
     {
         if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Vous n\'êtes pas autorisé à accéder à cette page.',
-            ]);
+            return back()->with('flash', ['error' => "Accès refusé."]);
         }
 
-        $users = User::with('roles:id,name')->select('id', 'pseudo', 'first_name', 'last_name', 'email', 'last_login', 'is_actif', 'anonyme', 'created_at')->paginate(10);
-        $users->withPath('/users');
+        // Bien charger les utilisateurs avec pagination 5 par page
+        $users = User::with('roles:id,name')
+            ->select('id', 'pseudo', 'first_name', 'last_name', 'email', 'last_login', 'is_actif', 'anonyme', 'created_at')
+            ->orderBy('created_at', 'asc')
+            ->paginate(5)
+            ->through(fn($user) => [
+                'id' => $user->id,
+                'pseudo' => $user->pseudo,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'email' => $user->email,
+                'last_login' => $user->last_login,
+                'is_actif' => $user->is_actif,
+                'anonyme' => $user->anonyme,
+                'created_at' => $user->created_at,
+                'roles' => $user->roles->map(fn($role) => [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                ]),
+            ])
+            ->withQueryString();
 
-        return Inertia::render('Users/Index', [
+        // Charger les événements sans pagination
+        $events = Event::with('creator:id,pseudo')
+            ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return Inertia::render('Admin/Index', [
             'users' => $users,
+            'events' => $events,
             'userRole' => auth()->user()->roles->pluck('name'),
-            'totalUsers' => User::count(),
         ]);
     }
 
-    // -------------------------------------------------------------------------------
+
+
+
+
+
+
+
     /**
-     * Affiche la page publique de profil d'un utilisateur.
-     * Accessible uniquement aux utilisateurs connectés.
+     * Affiche le profil d’un utilisateur connecté.
      */
     public function show(User $user)
     {
         if (!auth()->check()) {
-            return redirect()->route('login')->with('flash', [
-                'error' => 'Connecte-toi pour voir ce profil.',
-            ]);
+            return redirect()->route('login')->with('flash', ['error' => "Connecte-toi pour voir ce profil."]);
         }
 
         return Inertia::render('UsersShow', [
@@ -48,70 +76,59 @@ class UserController extends Controller
         ]);
     }
 
-    // -------------------------------------------------------------------------------
     /**
-     * Vérifie la disponibilité d’un pseudo via requête AJAX.
+     * Vérifie la disponibilité d’un pseudo (AJAX).
      */
     public function checkPseudo(Request $request)
     {
-        $pseudo = $request->get('pseudo');
-        $exists = User::where('pseudo', $pseudo)->exists();
+        $exists = User::where('pseudo', $request->pseudo)->exists();
         return response()->json(['available' => !$exists]);
     }
 
-    // -------------------------------------------------------------------------------
     /**
-     * Vérifie la disponibilité d’un email via requête AJAX.
+     * Vérifie la disponibilité d’un email (AJAX).
      */
     public function checkEmail(Request $request)
     {
-        $email = $request->get('email');
-        $exists = User::where('email', $email)->exists();
+        $exists = User::where('email', $request->email)->exists();
         return response()->json(['available' => !$exists]);
     }
 
-    // -------------------------------------------------------------------------------
     /**
-     * Active ou désactive un utilisateur (sauf Admin & Super-admin).
+     * Active ou désactive un utilisateur (sauf Admin, Super-admin, ou anonymisé).
      */
     public function toggleActivation(User $user)
     {
-        if ($user->hasAnyRole(['Admin', 'Super-admin'])) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Vous ne pouvez pas désactiver un administrateur.',
-            ]);
+        $currentUser = auth()->user();
+
+        if (!$currentUser->hasAnyRole(['Admin', 'Super-admin'])) {
+            return back()->with('flash', ['error' => "Action non autorisée."]);
         }
 
-        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Action non autorisée.',
-            ]);
+        if ($user->hasAnyRole(['Admin', 'Super-admin']) || $user->anonyme) {
+            return back()->with('flash', ['error' => "Impossible de modifier cet utilisateur."]);
         }
 
-        $user->is_actif = !$user->is_actif;
-        $user->save();
-
-        return redirect()->back()->with('flash', [
-            'success' => 'Statut du compte mis à jour.',
+        $user->update([
+            'is_actif' => !$user->is_actif,
         ]);
+
+        return back()->with('flash', ['success' => 'Statut mis à jour.']);
     }
 
-    // -------------------------------------------------------------------------------
     /**
-     * Anonymise un utilisateur (Super-admin uniquement).
+     * Anonymise définitivement un utilisateur (Super-admin uniquement).
      */
     public function anonymize(User $user)
     {
-        if (!auth()->user()->hasRole('Super-admin')) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Seul le Super-admin peut rendre un utilisateur anonyme.',
-            ]);
+        $currentUser = auth()->user();
+
+        if (!$currentUser->hasRole('Super-admin')) {
+            return back()->with('flash', ['error' => "Action non autorisée."]);
         }
 
-        if ($user->hasAnyRole(['Admin', 'Super-admin'])) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Impossible d’anonymiser un administrateur.',
-            ]);
+        if ($user->hasAnyRole(['Admin', 'Super-admin']) || $user->anonyme) {
+            return back()->with('flash', ['error' => "Impossible d'anonymiser cet utilisateur."]);
         }
 
         $user->update([
@@ -125,57 +142,45 @@ class UserController extends Controller
             'is_actif' => false,
         ]);
 
-        return redirect()->back()->with('flash', [
-            'success' => 'L’utilisateur a été anonymisé avec succès.',
-        ]);
+        return back()->with('flash', ['success' => 'Utilisateur anonymisé.']);
     }
 
-    // -------------------------------------------------------------------------------
     /**
-     * Met à jour le rôle d’un utilisateur (réservé au Super-admin).
+     * Met à jour le rôle d’un utilisateur (Super-admin uniquement).
+     * Impossible sur soi-même ou un Super-admin plus ancien.
      */
     public function updateRole(Request $request, User $user)
     {
         $authUser = auth()->user();
 
         if (!$authUser->hasRole('Super-admin')) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Seul le Super-admin peut changer les rôles.',
-            ]);
+            return back()->with('flash', ['error' => 'Action non autorisée.']);
         }
 
         if ($user->id === $authUser->id) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Tu ne peux pas modifier ton propre rôle.',
-            ]);
+            return back()->with('flash', ['error' => 'Tu ne peux pas modifier ton propre rôle.']);
         }
 
         $validated = $request->validate([
             'role' => ['required', 'in:User,Admin,Super-admin'],
         ]);
 
-        $role = Role::where('name', $validated['role'])->first();
-        if (!$role) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Le rôle sélectionné est invalide.',
-            ]);
-        }
-
-        // Bloque la rétrogradation d'un Super-admin plus ancien
         if (
             $user->hasRole('Super-admin') &&
             $validated['role'] !== 'Super-admin' &&
             $user->created_at < $authUser->created_at
         ) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Tu ne peux pas modifier le rôle d’un Super-admin plus ancien que toi.',
-            ]);
+            return back()->with('flash', ['error' => 'Impossible de modifier un Super-admin plus ancien.']);
+        }
+
+        $role = Role::where('name', $validated['role'])->first();
+
+        if (!$role) {
+            return back()->with('flash', ['error' => 'Rôle invalide.']);
         }
 
         $user->roles()->sync([$role->id]);
 
-        return redirect()->back()->with('flash', [
-            'success' => 'Le rôle de l’utilisateur a été mis à jour avec succès.',
-        ]);
+        return back()->with('flash', ['success' => 'Rôle mis à jour.']);
     }
 }

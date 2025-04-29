@@ -31,19 +31,22 @@ class RegisteredUserController extends Controller
     {
         // Validation des données du formulaire
         $validatedData = $request->validate([
-            'last_name' => ['required', 'regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/'],
-            'first_name' => ['required', 'regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/'],
-            'pseudo' => 'required|string|max:255|unique:users',
+            'last_name' => ['required', 'regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/', 'max:255'],
+            'first_name' => ['required', 'regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/','max:255'],
+            'pseudo' => 'required|string|max:30|unique:users',
             'genre' => 'required|string|in:homme,femme,autre,non_specifie',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ], [
             // Messages d'erreur personnalisés
             'last_name.required' => 'Le champ Nom est obligatoire.',
+            'last_name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
             'first_name.required' => 'Le champ Prénom est obligatoire.',
+            'first_name.max' => 'Le prénom ne peut pas dépasser 255 caractères.',
             'last_name.regex' => 'Le champ Nom contient des caractères invalides.',
             'first_name.regex' => 'Le champ Prénom contient des caractères invalides.',
             'pseudo.required' => 'Le champ Pseudo est obligatoire.',
+            'pseudo.max' => 'Le pseudo ne peut pas dépasser 30 caractères.',
             'pseudo.unique' => 'Ce pseudo est déjà utilisé.',
             'genre.required' => 'Le champ Genre est obligatoire.',
             'genre.in' => 'Le genre doit être homme, femme, autre ou non spécifié.',
