@@ -1,5 +1,36 @@
 # PROJET LARAVEL 11 AVEC VUE.JS 3
 
+## 🔵 Présentation
+
+## 🌳 * ParentsWood – L’application pour parents solos *
+
+**ParentsWood** est une plateforme web dédiée aux parents solos qui souhaitent créer du lien social, participer à des événements adaptés à leur rythme de vie, et retrouver un espace bienveillant en dehors des réseaux sociaux traditionnels.
+
+### ** Objectifs de l'application:
+
+- Favoriser les rencontres amicales et les échanges entre parents solos.
+- Proposer des événements organisés localement (balades, sorties, ateliers enfants-parents...).
+- Permettre aux utilisateurs de créer leurs propres événements et d’y inviter d'autres membres.
+- Assurer un cadre sécurisé, avec une modération et des rôles d'administration différenciés.
+
+### ** Fonctionnalités principales:
+
+- Inscription et authentification (avec gestion de rôles : User, Admin, Super-admin)
+- Création, affichage et participation à des événements
+- Système de commentaires lié aux événements
+- Panneau d’administration avec :
+    - Gestion des utilisateurs (activation, anonymisation, modification de rôle)
+    - Validation ou refus des événements avant publication
+- Interface utilisateur construite avec **Vue.js** et **Inertia.js**
+- Backend robuste sous **Laravel 11**, avec système de permissions
+
+### ** Pourquoi ce projet ?
+
+Développée dans le cadre de mon **travail de fin d’études**, cette application reflète à la fois :
+- un besoin personnel (en tant que maman solo),
+- une volonté de résoudre une problématique réelle de société,
+- et une envie d’apprendre concrètement le développement full-stack avec Laravel et Vue.js.
+
 ---
 
 ## 🔵 Introduction

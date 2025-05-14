@@ -102,3 +102,29 @@ Route::get('/events/{event}', [EventController::class, 'show'])->name('events.sh
 Route::middleware(['auth'])->group(function () {
     Route::get('/admin', [UserController::class, 'adminDashboard'])->name('admin.index');
 });
+
+Route::middleware(['auth'])->group(function () {
+    Route::post('/events/{event}/toggle-active', [EventController::class, 'toggleActive'])->name('events.toggleActive');
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::post('/events/{event}/accept', [EventController::class, 'accept'])->name('events.accept');
+    Route::post('/events/{event}/refuse', [EventController::class, 'refuse'])->name('events.refuse');
+});
+
+
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/admin/export/users', [UserController::class, 'exportUsers'])->name('admin.export.users');
+    Route::get('/admin/export/events', [EventController::class, 'exportEvents'])->name('admin.export.events');
+});
+
+
+
+Route::post('/events', [EventController::class, 'store'])->name('events.store');
+
+Route::post('/events/{event}/toggle-participation', [EventController::class, 'toggleParticipation'])->name('events.toggleParticipation');
+
+
+
+

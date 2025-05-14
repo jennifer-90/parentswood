@@ -10,7 +10,7 @@ class Event extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
+    protected $fillable = [ /* L’ordre des colonnes dans $fillable n’a aucune importance pour Laravel */
         'name_event',
         'description',
         'date',
@@ -22,6 +22,9 @@ class Event extends Model
         'inactif',
         'report',
         'picture_event',
+        'confirmed',
+        'validated_by_id',
+        'validated_at',
     ];
 
     public function creator()
@@ -37,6 +40,11 @@ class Event extends Model
     public function messages() // Les commentaires
     {
         return $this->hasMany(Message::class);
+    }
+
+    public function validatedBy()
+    {
+        return $this->belongsTo(User::class, 'validated_by_id');
     }
 
 

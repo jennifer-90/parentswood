@@ -1,7 +1,10 @@
 <script setup>
 import { ref } from 'vue'
-import { router, useForm } from '@inertiajs/vue3'
+import { useForm } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
+import villesData from '@/data/villes_belges.json' // fichier local
+
+const villes = ref(villesData.villes) // Accès à la clé "villes" de ton JSON
 
 const form = useForm({
     name_event: '',
@@ -16,15 +19,12 @@ const form = useForm({
 
 const submit = () => {
     form.post(route('events.store'), {
-        onSuccess: () => {
-            alert('Événement créé avec succès !')
-        },
-        onError: () => {
-            alert("Une erreur s'est produite.")
-        }
+        onSuccess: () => alert('Événement créé avec succès !'),
+        onError: () => alert("Une erreur s'est produite.")
     })
 }
 </script>
+
 
 <template>
     <AuthenticatedLayout>
@@ -34,48 +34,55 @@ const submit = () => {
             <form @submit.prevent="submit" class="space-y-4">
                 <div>
                     <label for="name_event" class="block font-medium">Nom de l'événement</label>
-                    <input v-model="form.name_event" type="text" id="name_event" class="input" required>
+                    <input v-model="form.name_event" type="text" id="name_event" class="input" required/>
                 </div>
 
                 <div>
                     <label for="description" class="block font-medium">Description</label>
-                    <textarea v-model="form.description" id="description" class="input"></textarea>
+                    <textarea v-model="form.description" id="description" class="input"/>
                 </div>
 
                 <div class="flex gap-4">
                     <div class="flex-1">
                         <label for="date" class="block font-medium">Date</label>
-                        <input v-model="form.date" type="date" id="date" class="input" required>
+                        <input v-model="form.date" type="date" id="date" class="input" required/>
                     </div>
                     <div class="flex-1">
                         <label for="hour" class="block font-medium">Heure</label>
-                        <input v-model="form.hour" type="time" id="hour" class="input" required>
+                        <input v-model="form.hour" type="time" id="hour" class="input" required/>
                     </div>
                 </div>
 
                 <div>
                     <label for="location" class="block font-medium">Lieu</label>
-                    <input v-model="form.location" type="text" id="location" class="input" required>
+                    <select v-model="form.location" id="location" class="input" required>
+                        <option disabled value="">-- Sélectionne une ville --</option>
+                        <option v-if="villes.length === 0" disabled>Chargement...</option>
+                        <option v-for="ville in villes" :key="ville" :value="ville">{{ ville }}</option>
+                    </select>
                 </div>
 
                 <div class="flex gap-4">
                     <div class="flex-1">
                         <label for="min_person" class="block font-medium">Participants min.</label>
-                        <input v-model="form.min_person" type="number" min="1" id="min_person" class="input" required>
+                        <input v-model="form.min_person" type="number" min="1" id="min_person" class="input" required/>
                     </div>
                     <div class="flex-1">
                         <label for="max_person" class="block font-medium">Participants max.</label>
-                        <input v-model="form.max_person" type="number" min="1" id="max_person" class="input" required>
+                        <input v-model="form.max_person" type="number" min="1" id="max_person" class="input" required/>
                     </div>
                 </div>
 
                 <div>
                     <label for="picture_event" class="block font-medium">Image de l'événement</label>
-                    <input type="file" @change="e => form.picture_event = e.target.files[0]" id="picture_event" class="input">
+                    <input type="file" @change="e => form.picture_event = e.target.files[0]" id="picture_event"
+                           class="input"/>
                 </div>
 
                 <div class="mt-6">
-                    <button type="submit" class="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700">Créer l’événement</button>
+                    <button type="submit" class="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700">Créer
+                        l’événement
+                    </button>
                 </div>
             </form>
         </div>
@@ -89,6 +96,7 @@ const submit = () => {
     padding: 0.5rem;
     border-radius: 0.375rem;
 }
+
 .page-all {
     background: #fafafa;
     margin-top: 2rem;

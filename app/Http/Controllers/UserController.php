@@ -42,11 +42,14 @@ class UserController extends Controller
             ])
             ->withQueryString();
 
+
         // Charger les événements sans pagination
-        $events = Event::with('creator:id,pseudo')
-            ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at')
+        $events = Event::with(['creator:id,pseudo', 'validatedBy:id,pseudo', 'participants:id'])
+            ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at', 'inactif', 'confirmed', 'validated_by_id', 'validated_at')
             ->orderBy('created_at', 'desc')
             ->get();
+
+
 
         return Inertia::render('Admin/Index', [
             'users' => $users,
@@ -54,13 +57,6 @@ class UserController extends Controller
             'userRole' => auth()->user()->roles->pluck('name'),
         ]);
     }
-
-
-
-
-
-
-
 
     /**
      * Affiche le profil d’un utilisateur connecté.
@@ -183,4 +179,44 @@ class UserController extends Controller
 
         return back()->with('flash', ['success' => 'Rôle mis à jour.']);
     }
+
+// UserController.php
+    public function exportUsers()
+    {
+        $users = User::with('roles')->get([
+            'id', 'pseudo', 'first_name', 'last_name', 'email', 'is_actif', 'anonyme', 'last_login'
+        ]);
+
+        $csvData = $users->map(function ($user) {
+            return [
+                'ID' => $user->id,
+                'Pseudo' => $user->pseudo,
+                'Prénom' => $user->first_name,
+                'Nom' => $user->last_name,
+                'Email' => $user->email,
+                'Actif' => $user->is_actif ? 'Oui' : 'Non',
+                'Anonyme' => $user->anonyme ? 'Oui' : 'Non',
+                'Dernière connexion' => $user->last_login,
+            ];
+        });
+
+        $filename = 'utilisateurs_export.csv';
+        $headers = ['Content-Type' => 'text/csv'];
+        $callback = function () use ($csvData) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, array_keys($csvData->first()));
+            foreach ($csvData as $line) {
+                fputcsv($handle, $line);
+            }
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, array_merge($headers, [
+            'Content-Disposition' => "attachment; filename={$filename}",
+        ]));
+    }
+
+
+
+
 }
