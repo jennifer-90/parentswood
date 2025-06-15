@@ -8,6 +8,8 @@ use App\Models\Role;
 use App\Models\Event;
 use Inertia\Inertia;
 
+
+
 class UserController extends Controller
 {
     /**
@@ -24,7 +26,7 @@ class UserController extends Controller
         $users = User::with('roles:id,name')
             ->select('id', 'pseudo', 'first_name', 'last_name', 'email', 'last_login', 'is_actif', 'anonyme', 'created_at')
             ->orderBy('created_at', 'asc')
-            ->paginate(5)
+            ->paginate(10)
             ->through(fn($user) => [
                 'id' => $user->id,
                 'pseudo' => $user->pseudo,
@@ -42,13 +44,12 @@ class UserController extends Controller
             ])
             ->withQueryString();
 
-
         // Charger les événements sans pagination
         $events = Event::with(['creator:id,pseudo', 'validatedBy:id,pseudo', 'participants:id'])
             ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at', 'inactif', 'confirmed', 'validated_by_id', 'validated_at')
             ->orderBy('created_at', 'desc')
-            ->get();
-
+            ->paginate(10)
+            ->withQueryString();
 
 
         return Inertia::render('Admin/Index', [
@@ -63,14 +64,23 @@ class UserController extends Controller
      */
     public function show(User $user)
     {
-        if (!auth()->check()) {
-            return redirect()->route('login')->with('flash', ['error' => "Connecte-toi pour voir ce profil."]);
-        }
+        $eventsCreatedCount = Event::where('created_by', $user->id)->count();
+
+        $eventsParticipated = $user->eventsParticipated()
+            ->select('events.id as event_id', 'name_event', 'date')
+            ->orderBy('date', 'asc')
+            ->get();
+
 
         return Inertia::render('UsersShow', [
-            'user' => $user->load('roles')
+            'user' => [
+                ...$user->toArray(),
+                'events_created' => $eventsCreatedCount,
+                'events_participated' => $eventsParticipated,
+            ],
         ]);
     }
+
 
     /**
      * Vérifie la disponibilité d’un pseudo (AJAX).
@@ -98,12 +108,16 @@ class UserController extends Controller
         $currentUser = auth()->user();
 
         if (!$currentUser->hasAnyRole(['Admin', 'Super-admin'])) {
-            return back()->with('flash', ['error' => "Action non autorisée."]);
+            return back()->with('flash', ['error' => "Action non autorisée."]); /* Ne s'affiche pas */
         }
 
-        if ($user->hasAnyRole(['Admin', 'Super-admin']) || $user->anonyme) {
-            return back()->with('flash', ['error' => "Impossible de modifier cet utilisateur."]);
+        if ($user->hasAnyRole(['Super-admin']) || $user->anonyme) {
+            return back()->with('flash', ['error' => "Impossible de modifier cet utilisateur."]);  /* Ne s'affiche pas */
         }
+
+        /*if($currentUser->hasAnyRole(['Admin'])) {
+            $user->hasAnyRole(['Admin']);
+        }*/
 
         $user->update([
             'is_actif' => !$user->is_actif,

@@ -10,14 +10,54 @@ use App\Models\Message;
 class EventController extends Controller
 {
     /**
-     * Affiche la liste des événements actifs (non inactifs), paginés par 10.
+     * Affiche la liste des événements actifs (non inactifs), paginés par 10 || Page events , no admin
      * Vue : Events/Index
      */
-    public function index()
+    public function index(Request $request)
     {
-        $events = Event::where('inactif', false)->latest()->paginate(10);
-        return Inertia::render('Events/Index', ['events' => $events]);
+        $ville = $request->input('ville');
+        $date = $request->input('date');
+
+        $filter = $request->input('filter');
+
+        $query = Event::where('inactif', false);
+
+        if ($ville) {
+            $query->where('location', $ville);
+        }
+
+        if ($date) {
+            $query->whereDate('date', $date);
+        }
+
+        if ($filter === 'week') {
+            $startOfWeek = now()->startOfWeek();
+            $endOfWeek = now()->endOfWeek();
+            $query->whereBetween('date', [$startOfWeek, $endOfWeek]);
+        }
+
+        if ($filter === 'month') {
+            $startOfMonth = now()->startOfMonth();
+            $endOfMonth = now()->endOfMonth();
+            $query->whereBetween('date', [$startOfMonth, $endOfMonth]);
+        }
+
+        // Tri par date croissante
+        $query->orderBy('date', 'asc');
+
+        $upcomingEvents = $query->whereDate('date', '>', now())->paginate(10)->withQueryString();
+        $pastEvents = Event::where('inactif', false)
+            ->whereDate('date', '<=', now())
+            ->orderBy('date', 'desc')
+            ->get();
+
+        return Inertia::render('Events/Index', [
+            'upcomingEvents' => $upcomingEvents,
+            'pastEvents' => $pastEvents,
+        ]);
     }
+
+
 
     /**
      * Affiche le formulaire de création d'un nouvel événement.
@@ -50,7 +90,11 @@ class EventController extends Controller
         // Gestion de l'image uploadée
         if ($request->hasFile('picture_event')) {
             $validated['picture_event'] = $request->file('picture_event')->store('events', 'public');
+        } else {
+            // Image par défaut
+            $validated['picture_event'] = null;
         }
+
 
         // Attribution de l'utilisateur créateur
         $validated['created_by'] = auth()->id();
@@ -60,6 +104,56 @@ class EventController extends Controller
 
         return redirect()->route('events.index')->with('success', 'Événement créé !');
     }
+
+    /**
+     * Affiche le formulaire de modification d'un événement.
+     * Vue : Events/Edit
+     */
+    public function edit(Event $event)
+    {
+        // Vérifie que seul le créateur ou un admin/super-admin peut modifier
+        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+            abort(403, 'Action non autorisée.');
+        }
+
+        return Inertia::render('Events/Edit', [
+            'event' => $event
+        ]);
+    }
+
+
+    public function update(Request $request, Event $event)
+    {
+        // Vérifie que seul le créateur ou un admin peut modifier
+        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+            abort(403, 'Non autorisé.');
+        }
+
+        $validated = $request->validate([
+            'name_event' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'date' => 'required|date',
+            'hour' => 'required',
+            'location' => 'required|string|max:255',
+            'min_person' => 'required|integer|min:1',
+            'max_person' => 'required|integer|min:1',
+            'picture_event' => 'nullable|image|max:2048',
+        ]);
+
+        if ($request->hasFile('picture_event')) {
+            $validated['picture_event'] = $request->file('picture_event')->store('events', 'public');
+        } else {
+            // Garder l'image actuelle
+            unset($validated['picture_event']); // Ne pas écraser si rien n’est envoyé
+        }
+
+
+        $event->update($validated);
+
+        return back()->with('success', 'Événement modifié avec succès.');
+    }
+
+
 
     /**
      * Permet à un utilisateur de rejoindre un événement.
@@ -104,16 +198,25 @@ class EventController extends Controller
             ->get();
 
         return Inertia::render('Events/Show', [
-            'event' => $event->load('creator', 'participants'),
+            'event' => [
+                ...$event->toArray(),
+                'creator' => $event->creator,
+                'participants' => $event->participants,
+                'created_by' => $event->created_by, // <-- Ajoute ceci
+            ],
             'messages' => $messages,
         ]);
+
     }
 
 
     /**
-     * Affiche la liste des événements (admin uniquement), paginés par 20.
+     * Affiche la liste des événements (admin uniquement), paginés par 5.
      * Vue : Events/AdminIndex
      */
+
+    /*
+
     public function adminIndex()
     {
         if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
@@ -124,12 +227,16 @@ class EventController extends Controller
 
         $events = Event::with('creator:id,pseudo')
             ->orderBy('created_at', 'desc')
-            ->paginate(20); // 20 événements par page
+            ->paginate(5); // 5 événements par page
 
         return Inertia::render('Events/AdminIndex', [
             'events' => $events,
         ]);
     }
+
+    */
+
+
 
     /**
      * Active ou désactive un événement (bascule le champ 'inactif').

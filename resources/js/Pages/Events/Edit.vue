@@ -1,11 +1,17 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import villesData from '@/data/villes_belges.json'
 
-// Liste des villes
+const props = defineProps({
+    event: Object,
+})
+
 const villes = ref(villesData.villes)
+
+// Prévisualisation de l’image actuelle ou sélectionnée
+const previewUrl = ref(props.event.picture_event ? `/storage/${props.event.picture_event}` : null)
 
 // Dates min/max
 const today = new Date().toISOString().split('T')[0]
@@ -13,23 +19,19 @@ const nextYear = new Date()
 nextYear.setFullYear(nextYear.getFullYear() + 1)
 const maxDate = nextYear.toISOString().split('T')[0]
 
-// Formulaire
+// Formulaire prérempli
 const form = useForm({
-    name_event: '',
-    description: '',
-    date: '',
-    hour: '',
-    location: '',
-    min_person: 1,
-    max_person: '',
-    picture_event: null,
+    name_event: props.event.name_event,
+    description: props.event.description,
+    date: props.event.date,
+    hour: props.event.hour,
+    location: props.event.location,
+    min_person: props.event.min_person,
+    max_person: props.event.max_person,
+    picture_event: null, // on ne précharge pas le fichier
 })
 
-// État pour prévisualisation et message de confirmation
-const previewUrl = ref(null)
-const successMessage = ref('')
-
-// Gestion de l'image
+// Mise à jour du fichier sélectionné
 const handleFileChange = (e) => {
     const file = e.target.files[0]
     if (file) {
@@ -38,28 +40,26 @@ const handleFileChange = (e) => {
     }
 }
 
-// Soumission
+// Soumission du formulaire
 const submit = () => {
-    form.post(route('events.store'), {
+    form.post(route('events.update', props.event.id), {
+        forceFormData: true, // nécessaire pour gérer l’image
         onSuccess: () => {
-            successMessage.value = '🎉 Événement créé avec succès !'
-            form.reset()
-            previewUrl.value = null
+            successMessage.value = '✅ Événement mis à jour avec succès !'
             setTimeout(() => successMessage.value = '', 4000)
         },
-        onError: () => {
-            alert("❌ Une erreur s'est produite.")
-        }
+        onError: () => alert("❌ Une erreur s'est produite.")
     })
 }
+
+const successMessage = ref('')
 </script>
 
 <template>
     <AuthenticatedLayout>
         <div class="max-w-2xl mx-auto bg-white shadow-md rounded-xl p-8 mt-10">
-            <h1 class="text-3xl font-bold text-teal-700 mb-6 text-center">🌟 Créer un nouvel événement</h1>
+            <h1 class="text-3xl font-bold text-teal-700 mb-6 text-center">✏️ Modifier l’événement</h1>
 
-            <!-- Message de succès -->
             <div v-if="successMessage" class="mb-6 bg-green-100 text-green-800 px-4 py-3 rounded text-center font-semibold shadow">
                 {{ successMessage }}
             </div>
@@ -74,7 +74,7 @@ const submit = () => {
                 <!-- Description -->
                 <div>
                     <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
-                    <textarea v-model="form.description" id="description" class="input" rows="4" placeholder="Décris l’ambiance, les activités..."></textarea>
+                    <textarea v-model="form.description" id="description" class="input" rows="4" />
                 </div>
 
                 <!-- Date & Heure -->
@@ -120,7 +120,7 @@ const submit = () => {
 
                 <!-- Image -->
                 <div>
-                    <label for="picture_event" class="block text-sm font-medium text-gray-700">Image de l'événement</label>
+                    <label for="picture_event" class="block text-sm font-medium text-gray-700">Changer l’image</label>
                     <input
                         type="file"
                         @change="handleFileChange"
@@ -129,15 +129,18 @@ const submit = () => {
                         accept="image/*"
                     />
                     <div v-if="previewUrl" class="mt-4">
-                        <p class="text-sm text-gray-500 mb-2">Aperçu :</p>
+                        <p class="text-sm text-gray-500 mb-2">
+                            Aperçu de l’image (la nouvelle si modifiée, sinon l’actuelle) :
+                        </p>
                         <img :src="previewUrl" alt="Prévisualisation" class="rounded-lg shadow-md max-h-64 object-cover" />
                     </div>
+
                 </div>
 
                 <!-- Bouton -->
                 <div class="text-center pt-4">
-                    <button type="submit" class="bg-teal-600 text-white px-6 py-2 rounded-full hover:bg-teal-700 shadow font-semibold">
-                        Créer l’événement
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 shadow font-semibold">
+                        💾 Sauvegarder les modifications
                     </button>
                 </div>
             </form>
@@ -157,7 +160,7 @@ const submit = () => {
 }
 .input:focus {
     outline: none;
-    border-color: #14b8a6; /* teal-500 */
-    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
+    border-color: #3b82f6; /* blue-500 */
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 </style>

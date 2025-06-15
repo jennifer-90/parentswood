@@ -13,11 +13,11 @@ use App\Http\Controllers\MessageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ProfileController;
 
-// =====================================================
-// Pages publiques
-// =====================================================
+// ========================================================================
+// Pages|Routes - publiques
+// ========================================================================
 
-// -- Page d'accueil (accessible uniquement aux invités)
+// #################### Page d'accueil (invités uniquement) ####################
 Route::get('/', function () {
     if (Auth::check()) {
         return redirect()->route('dashboard');
@@ -30,58 +30,66 @@ Route::get('/', function () {
     ]);
 })->name('home');
 
-// -- Vérification AJAX disponibilité du pseudo
+
+// ####################  Vérification AJAX disponibilité du pseudo ####################
 Route::get('/check-pseudo/{pseudo}', function ($pseudo) {
     $available = !User::where('pseudo', $pseudo)->exists();
     return response()->json(['available' => $available]);
 })->name('pseudo.check');
 
-// -- Authentification Breeze
+
+// #################### Authentification Breeze - Import des routes Breeze (login, register, etc.) ####################
 require __DIR__.'/auth.php';
 
-// =====================================================
-// Authentification : Login et Register (accessible aux invités uniquement)
-// =====================================================
+
+// ===========================================================================
+// Routes invitées (guest)
+// ===========================================================================
+
 Route::middleware('guest')->group(function () {
+    // Formulaire de connexion
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
     Route::post('/login', [AuthenticatedSessionController::class, 'store']);
 
+    // Formulaire d'inscription
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store']);
 });
 
-// =====================================================
-// Routes protégées par authentification
-// =====================================================
+// ================================================================================
+// Routes authentifiées (auth)
+// ================================================================================
 Route::middleware(['auth'])->group(function () {
 
-    // -- Tableau de bord
+    // Tableau de bord (seulement pour email vérifié)
     Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('verified')->name('dashboard');
 
-    // -- Profil utilisateur
+    // Profil utilisateur : affichage, mise à jour, suppression
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // -- Profil public d'un utilisateur
+    // Profil public d'un utilisateur- voir un profil d'un autre user
     Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
 
-    // -- Commentaires d'événements
+    // Commentaires sur les événements
     Route::post('/events/{event}/messages', [MessageController::class, 'store'])->name('messages.store');
 
     // -- Rejoindre un événement
     Route::post('/events/{event}/join', [EventController::class, 'join'])->name('events.join');
+
 });
 
-// =====================================================
+// ======================================================================================
 // Gestion des utilisateurs (réservée à Admin & Super-admin)
-// =====================================================
+// ======================================================================================
+
 Route::middleware(['auth'])->group(function () {
     Route::post('/users/{user}/toggle-activation', [UserController::class, 'toggleActivation'])->name('users.toggleActivation');
     Route::post('/users/{user}/update-role', [UserController::class, 'updateRole'])->name('users.updateRole');
 });
 
-// -- Anonymisation d'un utilisateur (Super-admin uniquement)
+// #################### Anonymisation d'un utilisateur (Super-admin uniquement) ####################
 Route::middleware(['auth', 'superadmin'])->post('/users/{user}/anonymize', [UserController::class, 'anonymize'])->name('users.anonymize');
 
 // =====================================================
@@ -127,4 +135,18 @@ Route::post('/events/{event}/toggle-participation', [EventController::class, 'to
 
 
 
+Route::middleware(['auth'])->group(function () {
+    // Formulaire d’édition
+    Route::get('/events/{event}/edit', [EventController::class, 'edit'])->name('events.edit');
 
+    // Mise à jour
+    Route::post('/events/{event}', [EventController::class, 'update'])->name('events.update');
+});
+
+Route::get('/events/{event}', [EventController::class, 'show'])->name('events.show');
+
+
+Route::patch('/profile/pseudo',   [ProfileController::class, 'updatePseudo'])
+    ->name('profile.updatePseudo');
+Route::patch('/profile/password', [ProfileController::class, 'updatePassword'])
+    ->name('profile.updatePassword');

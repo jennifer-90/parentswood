@@ -14,79 +14,97 @@ use Inertia\Response;
 class ProfileController extends Controller
 {
     /**
-     * Display the user's profile form.
+     * Afficher la page Inertia Profile/Edit
      */
-    public function edit(Request $request): Response
+    public function edit(): Response
     {
         return Inertia::render('Profile/Edit', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
-            'status' => session('status'),
+            'mustVerifyEmail' => Auth::user() instanceof MustVerifyEmail,
+            'status'          => session('status'),
+            'auth' => [
+                'user' => Auth::user()->only([
+                    'id', 'first_name', 'last_name', 'pseudo', 'email', 'picture_profil'
+                ]),
+            ],
         ]);
     }
 
     /**
-     * Update the user's profile information.
+     * Mettre à jour les infos de profil (prénom, nom, pseudo, email, photo).
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        // Récupère les données validées
+        $data = $request->validated();
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        // Si nouvelle photo, on la stocke
+        if ($request->hasFile('picture_profil')) {
+            $data['picture_profil'] = $request->file('picture_profil')
+                ->store('users', 'public');
         }
 
-        $request->user()->save();
+        // Si l'email a changé, on réinitialise la vérification
+        if (isset($data['email']) && $request->user()->email !== $data['email']) {
+            $data['email_verified_at'] = null;
+        }
 
-        return Redirect::route('profile.edit');
+        // Mise à jour en base
+        $request->user()->update($data);
+
+        return Redirect::route('profile.edit')
+            ->with('status', 'Profil mis à jour !');
     }
 
+
+
     /**
-     * Update the user's pseudo.
+     * Mettre à jour le pseudo seulement.
      */
     public function updatePseudo(Request $request): RedirectResponse
     {
         $request->validate([
-            'pseudo' => ['required', 'string', 'max:255', 'unique:users,pseudo'],
+            'pseudo' => ['required','string','max:255','unique:users,pseudo,'.$request->user()->id],
         ]);
 
-        $user = $request->user();
-        $user->pseudo = $request->pseudo;
-        $user->save();
+        $request->user()->update([
+            'pseudo' => $request->input('pseudo'),
+        ]);
 
-        return Redirect::route('profile.edit')->with('status', 'Pseudo updated successfully.');
+        return Redirect::route('profile.edit')
+            ->with('status', 'Pseudo mis à jour !');
     }
 
     /**
-     * Update the user's password.
+     * Mettre à jour le mot de passe seulement.
      */
     public function updatePassword(Request $request): RedirectResponse
     {
         $request->validate([
-            'current_password' => ['required', 'current_password'],
-            'password' => ['required', 'confirmed', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[\W_]).+$/'],
+            'current_password' => ['required','current_password'],
+            'password'         => ['required','confirmed','min:8',
+                'regex:/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[\W_]).+$/'],
         ]);
 
-        $user = $request->user();
-        $user->password = bcrypt($request->password);
-        $user->save();
+        $request->user()->update([
+            'password' => bcrypt($request->input('password')),
+        ]);
 
-        return Redirect::route('profile.edit')->with('status', 'Password updated successfully.');
+        return Redirect::route('profile.edit')
+            ->with('status', 'Mot de passe mis à jour !');
     }
 
-
     /**
-     * Delete the user's account.
+     * Supprimer le compte après vérification du mot de passe.
      */
     public function destroy(Request $request): RedirectResponse
     {
         $request->validate([
-            'password' => ['required', 'current_password'],
+            'password' => ['required','current_password'],
         ]);
 
         $user = $request->user();
 
         Auth::logout();
-
         $user->delete();
 
         $request->session()->invalidate();

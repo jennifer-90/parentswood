@@ -70,6 +70,11 @@ const getUserGlobalIndex = (index) => {
     return ((props.users.current_page - 1) * props.users.per_page) + index + 1;
 };
 
+const getEventGlobalIndex = (index) => {
+    return ((props.events.current_page - 1) * props.events.per_page) + index + 1;
+};
+
+
 // Permissions pour bloquer certaines modifications de rôles
 const cannotEditRole = (user) => {
     const isOlderSuperAdmin = user.roles[0]?.name === 'Super-admin' && new Date(user.created_at) < currentUserCreatedAt;
@@ -98,14 +103,14 @@ const updateRole = (user, event) => {
     router.post(route('users.updateRole', user.id), { role: newRole }, { preserveScroll: true });
 };
 
-// Recherche côté client pour événements (non paginés)
 const filteredEvents = computed(() => {
     const query = searchEvent.value.toLowerCase();
-    return props.events.filter(event =>
+    return props.events.data.filter(event =>
         event.name_event.toLowerCase().includes(query) ||
         event.location.toLowerCase().includes(query)
     );
 });
+
 
 const toggleEventActivation = (event) => {
     if (!confirm(`Voulez-vous ${event.inactif ? 'activer' : 'désactiver'} l'événement "${event.name_event}" ?`)) return;
@@ -311,7 +316,7 @@ const isPending = (event) => event.confirmed === null || event.confirmed === 'nu
                             :key="event.id"
                             :class="{ 'bg-orange-50': event.confirmed === null }"
                         >
-                            <td class="border px-3 py-2">{{ index + 1 }}</td>
+                            <td class="border px-3 py-2">{{ getEventGlobalIndex(index)}}</td>
                             <td class="border px-3 py-2">
                                 <i class="fa-solid fa-users"></i>&nbsp;
                                 <Link

@@ -38,7 +38,7 @@ const adminLabel = () => {
                         <!-- Left -->
                         <div class="flex">
                             <div class="flex items-center space-x-4">
-                                <img src="/storage/parentswood_logo.png" alt="Logo ParentsWood" class="h-16 w-16">
+                                <img src="/images/logo.png" alt="Logo ParentsWood" class="h-16 w-16">
                                 <p class="text-2xl font-extrabold text-gray-900">PARENTS.WOOD</p>
                             </div>
 

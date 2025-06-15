@@ -9,7 +9,8 @@ const isActive = (route) => window.location.pathname === route;
         <!-- Logo et texte alignés à gauche -->
         <div class="flex items-center space-x-4">
             <Link href="/" class="flex items-center space-x-2">
-                <img src="/storage/parentswood_logo.png" alt="ParentsWood Logo" class="h-16 w-16">
+                <img src="/images/logo.png" alt="ParentsWood Logo" class="h-16 w-16">
+
                 <span class="text-2xl font-extrabold text-gray-900">PARENTS.WOOD</span>
             </Link>
         </div>

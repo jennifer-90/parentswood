@@ -16,7 +16,6 @@ class DashboardController extends Controller
     {
         // Récupération des données nécessaires
 
-
         /*$user = Auth::user();
         $events = Event::where('user_id', $user->id)->get();
         $messages = Message::where('recipient_id', $user->id)->get();*/
