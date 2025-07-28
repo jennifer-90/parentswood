@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
-use Carbon\Carbon;
+use Carbon\Carbon; //Bibiliothèque laravel - Gestion heures & dates ||  extension de l’API PHP pour DateTime
 
 class DashboardController extends Controller
 {
@@ -13,11 +13,11 @@ class DashboardController extends Controller
     {
         $user = Auth::user();
 
-        // Récupération de tous les événements pour le calendrier
+        // Requete de récupération de tous les événements pour le calendrier
         $allEvents = Event::select('id', 'name_event', 'date', 'hour', 'location', 'description')
-            ->where('inactif', 0)
-            ->get()
-            ->map(function ($event) {
+            ->where('inactif', 0) //condition - que les events actifs || WHERE inactif = 0
+            ->get() // execute la requete
+            ->map(function ($event) { // transforme chaque objet Event en un tableau
                 return [
                     'id' => $event->id,
                     'title' => $event->name_event,
@@ -25,7 +25,7 @@ class DashboardController extends Controller
                     'time' => $event->hour,
                     'location' => $event->location,
                     'description' => $event->description,
-                    'url' => route('events.show', $event->id),
+                    'url' => route('events.show', $event->id), // génère l’URL de l’événement
                 ];
             });
 
@@ -36,7 +36,7 @@ class DashboardController extends Controller
             ->orderBy('events.date', 'asc')
             ->get()
             ->map(function ($event) {
-                $eventDate = Carbon::parse($event->date);
+                $eventDate = Carbon::parse($event->date); //Transformation en objet pour utiliser les fonctions
                 $today = Carbon::today();
 
                 return [
@@ -46,7 +46,7 @@ class DashboardController extends Controller
                     'hour' => $event->hour,
                     'location' => $event->location,
                     'description' => $event->description,
-                    'is_past' => $eventDate->lt($today),
+                    'is_past' => $eventDate->lt($today), //lt() = "less than" = inférieur à
                     'status' => $eventDate->lt($today) ? 'passé' : 'à_venir',
                 ];
             });
@@ -65,6 +65,7 @@ class DashboardController extends Controller
         $currentYear = Carbon::now()->year;
 
         $eventsThisMonth = $upcomingEvents->filter(function ($event) use ($currentMonth, $currentYear) {
+            // use => Permet à une fonction anonyme d’accéder à des variables externes
             $eventDate = Carbon::parse($event['date']);
             return $eventDate->month === $currentMonth && $eventDate->year === $currentYear;
         })->count();
@@ -76,7 +77,7 @@ class DashboardController extends Controller
             ->where('inactif', 0)
             ->count();
 
-        // Données pour le graphique des événements par mois (6 prochains mois)
+        // Données pour le graphique des événements par mois (6 prochains mois) || lib plotly
         $chartData = [];
         $currentDate = Carbon::now();
 

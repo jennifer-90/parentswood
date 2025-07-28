@@ -18,15 +18,37 @@ use App\Http\Controllers\ProfileController;
 // ========================================================================
 
 // #################### Page d'accueil (invités uniquement) ####################
+use App\Models\Event;
+use Carbon\Carbon;
+
 Route::get('/', function () {
     if (Auth::check()) {
         return redirect()->route('dashboard');
     }
+
+    // Récupérer les événements à venir
+    $events = Event::where('inactif', 0)
+        ->where('date', '>=', Carbon::now())
+        ->orderBy('date', 'asc')
+        ->take(6) // afficher que 6évents
+        ->get()
+        ->map(function($event) {
+            return [
+                'id' => $event->id,
+                'title' => $event->name_event,
+                'start_date' => $event->date . ' ' . $event->hour,
+                'location' => $event->location,
+                'participants_count' => $event->participants()->count(),
+                'description' => $event->description
+            ];
+        });
+
     return Inertia::render('Home/HomePage', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
+        'events' => $events  // Ajoutez cette ligne
     ]);
 })->name('home');
 
@@ -99,10 +121,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/events', [EventController::class, 'index'])->name('events.index');
     Route::get('/events/create', [EventController::class, 'create'])->name('events.create');
     Route::post('/events', [EventController::class, 'store'])->name('events.store');
+    Route::get('/events/{event}', [EventController::class, 'show'])->name('events.show');
 });
-
-// -- Détail d'un événement (accessible à tous)
-Route::get('/events/{event}', [EventController::class, 'show'])->name('events.show');
 
 // =====================================================
 // Section Administration (Utilisateurs + Événements)

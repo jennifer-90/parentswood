@@ -65,7 +65,7 @@ ou [XAMPP](https://www.apachefriends.org/index.html).
 ### 🔹 1. Cloner le projet depuis GitHub
 
 ```bash
-  git clone https://github.com/votre-nom-utilisateur/parentswood.git
+  git clone https://github.com/jennifer-90/parentswood.git
 ```
 
 ### 🔹2. Accéder au dossier du projet

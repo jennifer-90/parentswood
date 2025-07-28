@@ -22,7 +22,7 @@ class UserController extends Controller
             return back()->with('flash', ['error' => "Accès refusé."]);
         }
 
-        // Bien charger les utilisateurs avec pagination 5 par page
+        // Bien charger les utilisateurs avec pagination 10 par page
         $users = User::with('roles:id,name')
             ->select('id', 'pseudo', 'first_name', 'last_name', 'email', 'last_login', 'is_actif', 'anonyme', 'created_at')
             ->orderBy('created_at', 'asc')

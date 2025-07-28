@@ -192,6 +192,10 @@ class EventController extends Controller
      */
     public function show(Event $event)
     {
+
+        if (!auth()->check()) {
+            return redirect()->route('login');
+        }
         $messages = Message::where('event_id', $event->id)
             ->with('user:id,pseudo')
             ->latest()
