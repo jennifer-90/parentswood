@@ -18,12 +18,16 @@ class ProfileController extends Controller
      */
     public function edit(): Response
     {
+        $user = Auth::user();
+
         return Inertia::render('Profile/Edit', [
-            'mustVerifyEmail' => Auth::user() instanceof MustVerifyEmail,
+            'mustVerifyEmail' => $user instanceof MustVerifyEmail,
             'status'          => session('status'),
             'auth' => [
-                'user' => Auth::user()->only([
+                'user' => array_merge($user->only([
                     'id', 'first_name', 'last_name', 'pseudo', 'email', 'picture_profil'
+                ]), [
+                    'roles' => $user->roles->pluck('name')->toArray()
                 ]),
             ],
         ]);

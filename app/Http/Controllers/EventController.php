@@ -176,11 +176,13 @@ class EventController extends Controller
 
         if ($user->eventsParticipated()->where('event_id', $event->id)->exists()) {
             $user->eventsParticipated()->detach($event->id);
-            return back()->with('success', 'Participation annulée.');
+            $message = 'Participation annulée avec succès.';
         } else {
             $user->eventsParticipated()->attach($event->id);
-            return back()->with('success', 'Participation confirmée.');
+            $message = 'Participation enregistrée avec succès.';
         }
+
+        return back()->with('status', $message);
     }
 
 
@@ -246,22 +248,17 @@ class EventController extends Controller
      * Active ou désactive un événement (bascule le champ 'inactif').
      * Admin/Super-admin uniquement.
      */
-    public function toggleActive(Event $event) /* -- basculer actif --*/
+    public function toggleActive(Event $event)
     {
-            if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-                return redirect()->back()->with('flash', [
-                    'error' => 'Action non autorisée.',
-                ]);
-            }
+        // Bascule entre actif et inactif
+        $event->update(['inactif' => !$event->inactif]);
 
-            /* changement de l’état actif/inactif de l’évènt en un seul clic */
-            $event->update(attributes: [
-                'inactif' => !$event->inactif, /* --le contraire de inactif" -- */
-                /*  Si inactif est actuellement TRUE (événement désactivé) ==> il devient false (événement activé) -- le bouton affiche "Activer" en js.
-                    Si inactif est actuellement FALSE (événement activé) ==> il devient true (événement désactivé) -- le bouton affiche "Désactiver" en js.*/
-            ]);
-
-            return back()->with('success', 'Statut de l’événement mis à jour.');
+        return back()->with([
+            'status' => 'success',
+            'message' => $event->inactif
+                ? 'Événement désactivé avec succès.'
+                : 'Événement activé avec succès.'
+        ]);
     }
 
     /**

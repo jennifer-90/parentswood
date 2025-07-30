@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue';
-import { router, usePage, Link, Head } from '@inertiajs/vue3';
+import {ref, computed} from 'vue';
+import {router, usePage, Link, Head} from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
 const route = window.route;
@@ -74,20 +74,20 @@ const cannotEditRole = (user) => {
 const toggleActivation = (user) => {
     if (user.anonyme || user.roles.some(r => r.name === 'Super-admin')) return;
     if (!confirm(`Voulez-vous ${user.is_actif ? 'désactiver' : 'activer'} ${user.pseudo} ?`)) return;
-    router.post(route('users.toggleActivation', user.id), {}, { preserveScroll: true });
+    router.post(route('users.toggleActivation', user.id), {}, {preserveScroll: true});
 };
 
 const anonymizeUser = (user) => {
     if (user.roles.some(r => r.name === 'Super-admin') || user.anonyme) return;
     if (!confirm(`Voulez-vous anonymiser ${user.pseudo} ?`)) return;
-    router.post(route('users.anonymize', user.id), {}, { preserveScroll: true });
+    router.post(route('users.anonymize', user.id), {}, {preserveScroll: true});
 };
 
 const updateRole = (user, event) => {
     if (cannotEditRole(user)) return;
     const newRole = event.target.value;
     if (!confirm(`Attribuer le rôle "${newRole}" à ${user.pseudo} ?`)) return;
-    router.post(route('users.updateRole', user.id), { role: newRole }, { preserveScroll: true });
+    router.post(route('users.updateRole', user.id), {role: newRole}, {preserveScroll: true});
 };
 
 const filteredEvents = computed(() => {
@@ -99,11 +99,20 @@ const filteredEvents = computed(() => {
 });
 
 const toggleEventActivation = (event) => {
-    if (!confirm(`Voulez-vous ${event.inactif ? 'activer' : 'désactiver'} l'événement "${event.name_event}" ?`)) return;
+    if (!confirm(`Voulez-vous ${event.inactif ? 'activer' : 'désactiver'} l'événement "${event.name_event}" ?`)) {
+        return;
+    }
+
     router.post(route('events.toggleActive', event.id), {}, {
         preserveScroll: true,
-        onSuccess: () => console.log('Statut mis à jour'),
-        onError: () => alert('Erreur lors du changement de statut.')
+        onSuccess: () => {
+            // Mettre à jour l'état local
+            event.inactif = !event.inactif;
+        },
+        onError: (errors) => {
+            console.error('Erreur:', errors);
+            alert('Une erreur est survenue lors de la mise à jour du statut.');
+        }
     });
 };
 
@@ -111,7 +120,7 @@ const acceptEvent = (event) => {
     if (!confirm(`Accepter l'événement "${event.name_event}" ?`)) return;
     router.post(route('events.accept', event.id), {}, {
         preserveScroll: true,
-        onSuccess: () => router.visit(route('admin.index'), { preserveScroll: true, preserveState: false }),
+        onSuccess: () => router.visit(route('admin.index'), {preserveScroll: true, preserveState: false}),
         onError: () => alert('Erreur lors de l\'acceptation.')
     });
 };
@@ -127,14 +136,15 @@ const refuseEvent = (event) => {
 </script>
 
 <template>
-    <Head title="Gestion Super Admin" />
+    <Head title="Gestion Super Admin"/>
 
     <AuthenticatedLayout>
         <div class="py-4 bg-[#f9f5f2] min-h-screen">
             <div class="mx-auto w-full px-3 sm:px-5">
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
                     <!-- Titre principal avec icône -->
-                    <div class="bg-transparent border-2 border-[#ffb347] rounded-lg p-4 mb-6" style="background-color: rgba(255, 179, 71, 0.05);">
+                    <div class="bg-transparent border-2 border-[#ffb347] rounded-lg p-4 mb-6"
+                         style="background-color: rgba(255, 179, 71, 0.05);">
                         <div class="flex items-center justify-center gap-3">
                             <div class="bg-[#ffb347] text-white rounded-full p-3">
                                 <i class="fa-solid fa-user-shield text-xl"></i>
@@ -181,40 +191,59 @@ const refuseEvent = (event) => {
                                 <table class="min-w-full">
                                     <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors" @click="sortBy('pseudo')">
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                            @click="sortBy('pseudo')">
                                             Pseudo
-                                            <i v-if="sortField === 'pseudo'" :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
+                                            <i v-if="sortField === 'pseudo'"
+                                               :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
                                         </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors" @click="sortBy('first_name')">
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                            @click="sortBy('first_name')">
                                             Nom
-                                            <i v-if="sortField === 'first_name'" :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
+                                            <i v-if="sortField === 'first_name'"
+                                               :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
                                         </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors" @click="sortBy('email')">
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                            @click="sortBy('email')">
                                             Email
-                                            <i v-if="sortField === 'email'" :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
+                                            <i v-if="sortField === 'email'"
+                                               :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
                                         </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Statut</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rôle</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Statut
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Rôle
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Actions
+                                        </th>
                                     </tr>
                                     </thead>
                                     <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="(user, index) in filteredUsers" :key="user.id" :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'" class="hover:bg-blue-50 transition-colors">
+                                    <tr v-for="(user, index) in filteredUsers" :key="user.id"
+                                        :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
+                                        class="hover:bg-blue-50 transition-colors">
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(user.pseudo, searchUser)" class="font-medium text-gray-900"></span>
+                                            <span v-html="highlight(user.pseudo, searchUser)"
+                                                  class="font-medium text-gray-900"></span>
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(user.first_name + ' ' + user.last_name, searchUser)" class="text-gray-700"></span>
+                                            <span v-html="highlight(user.first_name + ' ' + user.last_name, searchUser)"
+                                                  class="text-gray-700"></span>
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(user.email, searchUser)" class="text-gray-700"></span>
+                                            <span v-html="highlight(user.email, searchUser)"
+                                                  class="text-gray-700"></span>
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                                <span v-if="user.is_actif" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                <span v-if="user.is_actif"
+                                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                     <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
                                                     Actif
                                                 </span>
-                                            <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                            <span v-else
+                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                                                     <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
                                                     Inactif
                                                 </span>
@@ -246,7 +275,8 @@ const refuseEvent = (event) => {
                                                         ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'
                                                         : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'"
                                             >
-                                                <i :class="user.is_actif ? 'fa-solid fa-user-slash' : 'fa-solid fa-user-check'" class="mr-1"></i>
+                                                <i :class="user.is_actif ? 'fa-solid fa-user-slash' : 'fa-solid fa-user-check'"
+                                                   class="mr-1"></i>
                                                 {{ user.is_actif ? 'Désactiver' : 'Activer' }}
                                             </button>
 
@@ -307,25 +337,43 @@ const refuseEvent = (event) => {
                                 <table class="min-w-full">
                                     <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">#</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Nom</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Lieu</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Créateur</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Confirmation</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            #
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Nom
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Lieu
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Date
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Créateur
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Confirmation
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Actions
+                                        </th>
                                     </tr>
                                     </thead>
                                     <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="(event, index) in filteredEvents" :key="event.id" :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'" class="hover:bg-blue-50 transition-colors">
+                                    <tr v-for="(event, index) in filteredEvents" :key="event.id"
+                                        :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
+                                        class="hover:bg-blue-50 transition-colors">
                                         <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {{ getEventGlobalIndex(index) }}
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(event.name_event, searchEvent)" class="font-medium text-gray-900"></span>
+                                            <span v-html="highlight(event.name_event, searchEvent)"
+                                                  class="font-medium text-gray-900"></span>
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(event.location, searchEvent)" class="text-gray-700"></span>
+                                            <span v-html="highlight(event.location, searchEvent)"
+                                                  class="text-gray-700"></span>
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
                                             {{ new Date(event.date).toLocaleDateString('fr-BE') }}
@@ -334,19 +382,32 @@ const refuseEvent = (event) => {
                                             <span>{{ event.creator?.pseudo ?? 'Inconnu' }}</span>
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                                <span v-if="event.confirmed == true" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                <span v-if="event.confirmed == true"
+                                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                     <i class="fa fa-check mr-1"></i> Accepté
-                                                    <span v-if="event.validated_by" class="block text-xs text-gray-500 mt-1">
-                                                        par {{ event.validated_by.pseudo }} | {{ new Date(event.validated_at).toLocaleDateString('fr-BE') }}
+                                                    <span v-if="event.validated_by"
+                                                          class="block text-xs text-gray-500 mt-1">
+                                                        par {{
+                                                            event.validated_by.pseudo
+                                                        }} | {{
+                                                            new Date(event.validated_at).toLocaleDateString('fr-BE')
+                                                        }}
                                                     </span>
                                                 </span>
-                                            <span v-else-if="event.confirmed == false" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                            <span v-else-if="event.confirmed == false"
+                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                                                     <i class="fa fa-close mr-1"></i> Refusé
-                                                    <span v-if="event.validated_by" class="block text-xs text-gray-500 mt-1">
-                                                        par {{ event.validated_by.pseudo }} | {{ new Date(event.validated_at).toLocaleDateString('fr-BE') }}
+                                                    <span v-if="event.validated_by"
+                                                          class="block text-xs text-gray-500 mt-1">
+                                                        par {{
+                                                            event.validated_by.pseudo
+                                                        }} | {{
+                                                            new Date(event.validated_at).toLocaleDateString('fr-BE')
+                                                        }}
                                                     </span>
                                                 </span>
-                                            <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                            <span v-else
+                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                                                     <i class="fa fa-clock mr-1"></i> En attente
                                                 </span>
                                         </td>
@@ -356,9 +417,10 @@ const refuseEvent = (event) => {
                                                 v-if="event.confirmed !== null"
                                                 class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
                                                 :class="event.inactif
-                                                        ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
-                                                        : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'"
-                                            > {{ event.inactif ? 'Activer' : 'Désactiver' }}
+        ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
+        : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'"
+                                            >
+                                                {{ event.inactif ? 'Activer' : 'Désactiver' }}
                                             </button>
 
                                             <template v-if="event.confirmed === null">
@@ -482,9 +544,15 @@ tr:hover {
 }
 
 @keyframes gradient-shift {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
 }
 
 /* Styles pour les icônes */
@@ -629,13 +697,17 @@ button:focus-visible {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
     animation: loading 1.5s infinite;
 }
 
 @keyframes loading {
-    0% { left: -100%; }
-    100% { left: 100%; }
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
+    }
 }
 
 /* Styles additionnels pour l'harmonie visuelle */
@@ -655,7 +727,7 @@ button, select, input {
 
 .inline-flex.items-center:hover {
     transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* Amélioration des ombres pour la profondeur */

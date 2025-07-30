@@ -116,4 +116,24 @@ class User extends Authenticatable
             })->exists();
     }
 
+    /**
+     * Les événements créés par l'utilisateur
+     */
+    public function eventsCreated()
+    {
+        return $this->hasMany(Event::class, 'user_id');
+    }
+
+    public function events()
+    {
+        return $this->hasMany(Event::class);
+    }
+
+    public function participatingEvents()
+    {
+        return $this->belongsToMany(Event::class, 'event_participants')
+            ->withTimestamps()
+            ->withPivot('status');
+    }
+
 }
