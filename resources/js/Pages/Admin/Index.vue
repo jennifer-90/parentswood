@@ -133,6 +133,8 @@ const refuseEvent = (event) => {
         onError: () => alert('Erreur lors du refus.')
     });
 };
+
+
 </script>
 
 <template>

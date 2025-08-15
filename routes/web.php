@@ -104,10 +104,18 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/events/create', [EventController::class, 'create'])->name('events.create');
         Route::post('/events', [EventController::class, 'store'])->name('events.store');
         Route::get('/events/{event}', [EventController::class, 'show'])->name('events.show');
+        // Édition d'un événement
+        Route::get('/events/{event}/edit', [EventController::class, 'edit'])->name('events.edit');
+        Route::put('/events/{event}', [EventController::class, 'update'])->name('events.update');
         // Commentaires sur les événements
         Route::post('/events/{event}/messages', [MessageController::class, 'store'])->name('messages.store');
         // -- Rejoindre un événement
         Route::post('/events/{event}/join', [EventController::class, 'join'])->name('events.join');
+        // -- Basculer la participation
+        Route::post('/events/{event}/toggle-participation', [EventController::class, 'toggleParticipation'])->name('events.toggleParticipation');
+        
+        // -- Désactiver un événement
+        Route::put('/events/{event}/deactivate', [EventController::class, 'deactivate'])->name('events.deactivate');
     });
 
 });

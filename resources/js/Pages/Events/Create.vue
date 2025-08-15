@@ -13,6 +13,68 @@ const nextYear = new Date()
 nextYear.setFullYear(nextYear.getFullYear() + 1)
 const maxDate = nextYear.toISOString().split('T')[0]
 
+// Validation du formulaire
+const validateForm = () => {
+    const errors = {}
+    
+    if (!form.name_event.trim()) {
+        errors.name_event = 'Le nom de l\'événement est requis.'
+    }
+    
+    if (!form.date) {
+        errors.date = 'La date est requise.'
+    } else {
+        const selectedDate = new Date(form.date)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        
+        if (selectedDate < today) {
+            errors.date = 'La date doit être aujourd\'hui ou une date ultérieure.'
+        }
+        
+        const maxDate = new Date()
+        maxDate.setFullYear(maxDate.getFullYear() + 1)
+        if (selectedDate > maxDate) {
+            errors.date = 'La date ne peut pas être plus d\'un an dans le futur.'
+        }
+    }
+    
+    if (!form.hour) {
+        errors.hour = 'L\'heure est requise.'
+    }
+    
+    if (!form.location) {
+        errors.location = 'Le lieu est requis.'
+    }
+    
+    if (!form.min_person) {
+        errors.min_person = 'Le nombre minimum de participants est requis.'
+    } else if (form.min_person < 1) {
+        errors.min_person = 'Le nombre minimum de participants doit être d\'au moins 1.'
+    }
+    
+    if (!form.max_person) {
+        errors.max_person = 'Le nombre maximum de participants est requis.'
+    } else if (form.max_person < 1) {
+        errors.max_person = 'Le nombre maximum de participants doit être d\'au moins 1.'
+    } else if (parseInt(form.max_person) <= parseInt(form.min_person)) {
+        errors.max_person = 'Le nombre maximum de participants doit être supérieur au minimum.'
+    }
+    
+    if (form.picture_event) {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg']
+        const maxSize = 2 * 1024 * 1024 // 2MB
+        
+        if (!allowedTypes.includes(form.picture_event.type)) {
+            errors.picture_event = 'Le fichier doit être une image (JPEG, PNG, JPG).'
+        } else if (form.picture_event.size > maxSize) {
+            errors.picture_event = 'L\'image ne doit pas dépasser 2 Mo.'
+        }
+    }
+    
+    return errors
+}
+
 // Formulaire
 const form = useForm({
     name_event: '',
@@ -38,17 +100,64 @@ const handleFileChange = (e) => {
     }
 }
 
-// Soumission
+// État des erreurs de validation
+const validationErrors = ref({})
+
+// Réinitialiser les erreurs lors de la modification des champs
+const resetFieldError = (field) => {
+    if (validationErrors.value[field]) {
+        validationErrors.value[field] = ''
+    }
+}
+
+// Soumission avec validation
 const submit = () => {
+    // Validation côté client
+    const errors = validateForm()
+    
+    if (Object.keys(errors).length > 0) {
+        validationErrors.value = errors
+        // Faire défiler jusqu'au premier champ en erreur
+        const firstErrorField = Object.keys(errors)[0]
+        const element = document.getElementById(firstErrorField)
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            element.focus()
+        }
+        return
+    }
+    
+    // Si la validation est passée, on envoie le formulaire
     form.post(route('events.store'), {
+        preserveScroll: true,
         onSuccess: () => {
             successMessage.value = '🎉 Événement créé avec succès !'
             form.reset()
             previewUrl.value = null
+            validationErrors.value = {}
+            // Faire défiler vers le haut pour voir le message de succès
+            window.scrollTo({ top: 0, behavior: 'smooth' })
             setTimeout(() => successMessage.value = '', 4000)
         },
-        onError: () => {
-            alert("❌ Une erreur s'est produite.")
+        onError: (errors) => {
+            if (errors.errors) {
+                // Gestion des erreurs côté serveur
+                validationErrors.value = {}
+                for (const [field, messages] of Object.entries(errors.errors)) {
+                    validationErrors.value[field] = Array.isArray(messages) ? messages[0] : messages
+                }
+                
+                // Faire défiler jusqu'au premier champ en erreur
+                const firstErrorField = Object.keys(errors.errors)[0]
+                const element = document.getElementById(firstErrorField)
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    element.focus()
+                }
+            } else {
+                // Erreur générique
+                alert("❌ Une erreur s'est produite lors de la création de l'événement.")
+            }
         }
     })
 }
@@ -88,12 +197,19 @@ const submit = () => {
                                     </label>
                                     <input
                                         v-model="form.name_event"
+                                        @input="resetFieldError('name_event')"
                                         type="text"
                                         id="name_event"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
+                                        :class="{
+                                            'border-red-500': validationErrors.name_event,
+                                            'border-gray-300': !validationErrors.name_event
+                                        }"
+                                        class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         placeholder="Ex: Soirée jeux de société"
-                                        required
                                     />
+                                    <p v-if="validationErrors.name_event" class="mt-1 text-sm text-red-600">
+                                        {{ validationErrors.name_event }}
+                                    </p>
                                 </div>
 
                                 <!-- Date et Heure -->
@@ -104,13 +220,20 @@ const submit = () => {
                                         </label>
                                         <input
                                             v-model="form.date"
+                                            @input="resetFieldError('date')"
                                             type="date"
                                             id="date"
-                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
+                                            :class="{
+                                                'border-red-500': validationErrors.date,
+                                                'border-gray-300': !validationErrors.date
+                                            }"
+                                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                             :min="today"
                                             :max="maxDate"
-                                            required
                                         />
+                                        <p v-if="validationErrors.date" class="mt-1 text-sm text-red-600">
+                                            {{ validationErrors.date }}
+                                        </p>
                                     </div>
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                         <label for="hour" class="block text-sm font-medium text-gray-700 mb-1">
@@ -118,11 +241,18 @@ const submit = () => {
                                         </label>
                                         <input
                                             v-model="form.hour"
+                                            @input="resetFieldError('hour')"
                                             type="time"
                                             id="hour"
-                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
-                                            required
+                                            :class="{
+                                                'border-red-500': validationErrors.hour,
+                                                'border-gray-300': !validationErrors.hour
+                                            }"
+                                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
+                                        <p v-if="validationErrors.hour" class="mt-1 text-sm text-red-600">
+                                            {{ validationErrors.hour }}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -133,13 +263,20 @@ const submit = () => {
                                     </label>
                                     <select
                                         v-model="form.location"
+                                        @change="resetFieldError('location')"
                                         id="location"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
-                                        required
+                                        :class="{
+                                            'border-red-500': validationErrors.location,
+                                            'border-gray-300': !validationErrors.location
+                                        }"
+                                        class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                     >
-                                        <option value="" disabled>Sélectionnez une ville</option>
+                                        <option value="" disabled selected>Sélectionnez une ville</option>
                                         <option v-for="ville in villes" :key="ville" :value="ville">{{ ville }}</option>
                                     </select>
+                                    <p v-if="validationErrors.location" class="mt-1 text-sm text-red-600">
+                                        {{ validationErrors.location }}
+                                    </p>
                                 </div>
                             </div>
 
@@ -153,11 +290,19 @@ const submit = () => {
                                         </label>
                                         <input
                                             v-model.number="form.min_person"
+                                            @input="[resetFieldError('min_person'), resetFieldError('max_person')]"
                                             type="number"
                                             id="min_person"
                                             min="1"
-                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
+                                            :class="{
+                                                'border-red-500': validationErrors.min_person,
+                                                'border-gray-300': !validationErrors.min_person
+                                            }"
+                                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
+                                        <p v-if="validationErrors.min_person" class="mt-1 text-sm text-red-600">
+                                            {{ validationErrors.min_person }}
+                                        </p>
                                     </div>
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                         <label for="max_person" class="block text-sm font-medium text-gray-700 mb-1">
@@ -165,11 +310,19 @@ const submit = () => {
                                         </label>
                                         <input
                                             v-model.number="form.max_person"
+                                            @input="resetFieldError('max_person')"
                                             type="number"
                                             id="max_person"
                                             :min="form.min_person || 1"
-                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
+                                            :class="{
+                                                'border-red-500': validationErrors.max_person,
+                                                'border-gray-300': !validationErrors.max_person
+                                            }"
+                                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
+                                        <p v-if="validationErrors.max_person" class="mt-1 text-sm text-red-600">
+                                            {{ validationErrors.max_person }}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -192,6 +345,9 @@ const submit = () => {
                                         <p class="text-sm text-gray-500 mb-2">Aperçu :</p>
                                         <img :src="previewUrl" alt="Aperçu de l'image" class="h-32 w-full object-cover rounded-lg border border-gray-200">
                                     </div>
+                                    <p v-if="validationErrors.picture_event" class="mt-2 text-sm text-red-600">
+                                        {{ validationErrors.picture_event }}
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -208,6 +364,9 @@ const submit = () => {
                                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                 placeholder="Décrivez votre événement en détail..."
                             ></textarea>
+                            <p v-if="validationErrors.description" class="mt-1 text-sm text-red-600">
+                                {{ validationErrors.description }}
+                            </p>
                         </div>
 
                         <!-- Boutons d'action -->
