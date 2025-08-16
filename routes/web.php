@@ -113,7 +113,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/events/{event}/join', [EventController::class, 'join'])->name('events.join');
         // -- Basculer la participation
         Route::post('/events/{event}/toggle-participation', [EventController::class, 'toggleParticipation'])->name('events.toggleParticipation');
-        
+
         // -- Désactiver un événement
         Route::put('/events/{event}/deactivate', [EventController::class, 'deactivate'])->name('events.deactivate');
     });
@@ -164,8 +164,8 @@ Route::middleware(['auth'])->group(function () {
     // Formulaire d’édition
     Route::get('/events/{event}/edit', [EventController::class, 'edit'])->name('events.edit');
 
-    // Mise à jour
-    Route::post('/events/{event}', [EventController::class, 'update'])->name('events.update');
+
+    //Route::post('/events/{event}', [EventController::class, 'update'])->name('events.update');
 });
 
 

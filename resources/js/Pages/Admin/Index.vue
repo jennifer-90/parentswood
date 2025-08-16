@@ -188,6 +188,17 @@ const refuseEvent = (event) => {
                                 </a>
                             </div>
 
+                            <!-- Text explicatif -->
+                            <p class="mb-4 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-3 leading-relaxed">
+                                Vous pouvez trier les utilisateurs en cliquant sur les intitulés de colonnes
+                                <span class="font-semibold text-gray-800">Pseudo</span>,
+                                <span class="font-semibold text-gray-800">Nom</span> ou
+                                <span class="font-semibold text-gray-800">Email</span>.
+                                Un premier clic affiche les données en ordre croissant (A → Z).
+                                Un second clic rétablit l’ordre initial défini par défaut.
+                                Cette fonctionnalité rend la consultation des informations plus rapide et intuitive.
+                            </p>
+
                             <!-- Table des utilisateurs -->
                             <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
                                 <table class="min-w-full">

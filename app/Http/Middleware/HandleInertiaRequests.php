@@ -41,13 +41,14 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
             ],
 
-            // Tu peux aussi partager d'autres données globales ici
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
 
             'totalUsers' => fn () => \App\Models\User::count(),
+
+            //'csrf_token' => csrf_token(),
 
         ];
     }

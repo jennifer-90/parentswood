@@ -80,6 +80,7 @@
                                     <DropdownLink :href="route('profile.edit')" class="flex items-center">
                                         <i class="fas fa-user-edit mr-2 w-5 text-center"></i> Modifier le profil
                                     </DropdownLink>
+
                                     <DropdownLink
                                         :href="route('logout')"
                                         method="post"
