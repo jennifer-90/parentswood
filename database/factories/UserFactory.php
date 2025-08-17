@@ -32,7 +32,7 @@ class UserFactory extends Factory
             'localisation' => $this->faker->city(),
             'picture_profil' => $this->faker->imageUrl(100, 100, 'people'), // Image aléatoire
             'privacy_status' => $this->faker->boolean(80), // 80% de chances que ce soit public
-            'is_actif' => $this->faker->boolean(90), // 90% de chances que l'utilisateur soit actif
+            'is_actif' => true, // toujours actif
             'max_create_event' => $this->faker->numberBetween(1, 10),
             'anonyme' => $this->faker->boolean(10), // 10% de chances d'être anonyme
             'centre_interet' => null, // Par défaut null

@@ -339,6 +339,21 @@ onMounted(() => {
                         </div>
                     </div>
                 </div>
+                <!-- Aide rapide / explications du tableau de bord -->
+                <div class="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 leading-relaxed">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fa-solid fa-circle-info mr-1 text-[#59c4b4]"></i>
+                        Aide rapide
+                    </h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><span class="font-medium">Calendrier :</span> utilisez <em>Préc./Suiv.</em> et les vues <em>Mois/Semaine/Jour</em> pour naviguer.</li>
+                        <li><span class="font-medium">Événements :</span> cliquez sur un événement du calendrier pour ouvrir sa page (nouvel onglet).</li>
+                        <li><span class="font-medium">Créer :</span> le bouton <em>“Créer un événement”</em> vous permet d’en proposer un nouveau.</li>
+                        <li><span class="font-medium">Mes participations :</span> cliquez sur une carte “À venir” ou “Historique” pour voir le détail.</li>
+                        <li><span class="font-medium">Graphique :</span> affiche le nombre d’événements auxquels vous participez sur les <strong>6 prochains mois</strong> (survolez une barre pour voir le détail).</li>
+                    </ul>
+                </div>
+
             </div>
         </div>
     </AuthenticatedLayout>

@@ -171,6 +171,14 @@ Route::middleware(['auth'])->group(function () {
 
 
 
+Route::middleware(['auth', 'superadmin' ])
+->post('/admin/seed/users', [UserController::class, 'seedUsers'])
+    ->name('admin.seed.users');
+
+
+
+
+
 
 
 

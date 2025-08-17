@@ -1,31 +1,139 @@
 <script setup>
+
 import {ref, computed} from 'vue';
-import {router, usePage, Link, Head} from '@inertiajs/vue3';
+import {router, usePage, Link, Head, useRemember} from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { watch } from 'vue';
+
 
 const route = window.route;
+const debounce = (fn, d=300) => {
+    let t;
+    return (...a)=>{
+        clearTimeout(t);
+        t=setTimeout(()=>fn(...a), d);
+    };
+};
 
+/****************************************************************/
+/*==============================================================*/
+/* -- PROPS: données envoyées par le contrôleur vers Inertia -- */
 const props = defineProps({
     users: Object,
     events: Object,
     userRole: Array,
 });
+/*==============================================================*/
+/****************************************************************/
 
-const page = usePage();
-const currentUser = page.props.auth.user;
-const currentUserId = currentUser.id;
-const currentUserCreatedAt = new Date(currentUser.created_at);
 
-const searchUser = ref('');
+const getUserGlobalIndex = (index) => {
+    return ((props.users.current_page - 1) * props.users.per_page) + index + 1;
+};
+const getEventGlobalIndex = (index) => {
+    return ((props.events.current_page - 1) * props.events.per_page) + index + 1;
+};
+
+/* ########## INFOS DU USER CONNECTE A L'HEURE ACTUEL ##########################################################*/
+const page = usePage(); // donne accès à tout ce qu'Inertia expose (props, auth, etc.)
+const nowConnectUser = page.props.auth.user; // récupère l’utilisateur connecté
+const nowConnectUserId = nowConnectUser.id;
+const nowConnectUserCreatedAt = new Date(nowConnectUser.created_at); // sa date de création => règle de “seniorité” avec isOlderSuperAdmin
+
+
+
+/* ########## TEXTE DYNAMIQUE POUR LE TITRE DE LA PAGE ADMIN ##################################################*/
+const adminTitle = computed(() => {
+    if (nowConnectUser.role === 'Super-admin') {
+        return 'Gestion Super Admin';
+    }
+    if (nowConnectUser.role === 'Admin') {
+        return 'Gestion Admin';
+    }
+});
+
+/* ########## CHANGER UN ROLE ##################################################################################*/
+const isSuperAdmin = () => nowConnectUser.role === 'Super-admin'; //déclartion de la variable que si le user connecté a le role de super-admin
+const isSelf = (user) => user.id === nowConnectUserId;
+
+/** Détermine si le menu déroulant (option/select) des rôles doit être désactivé pour ce user */
+const cannotEditRole = (user) => {
+    const targetRole = user.roles?.[0]?.name || 'User'; // "?." ==> évite une erreur si roles n’existe pas (De base impossible)
+
+    // Super-admin qui veut changer le rôle d'un autre utilisateur
+    if (isSuperAdmin()) {
+        const isOlderSuperAdmin = targetRole === 'Super-admin'
+            && new Date(user.created_at) < nowConnectUserCreatedAt;
+        return isSelf(user) || //la personne connecté elle-meme
+            user.anonyme || //la personne est anonymisée
+            isOlderSuperAdmin; //c’est un Super-admin plus ancien que la personne qui essaye de modifier
+    }
+
+    // Pour l'admin : pas soi-même, pas un Super-admin, pas un anonymisé
+    if (nowConnectUser.role === 'Admin') {
+        return isSelf(user) ||
+            user.anonyme ||
+            targetRole === 'Super-admin';
+    }
+
+    // Tous les autres rôles : non modifiable
+    return true;
+};
+
+
+const updateRole = (user, event) => {
+    if (cannotEditRole(user)) return;
+    const newRole = event.target.value;
+    if (!confirm(`Attribuer le rôle "${newRole}" à ${user.pseudo} ?`)) return;
+    router.post(route('users.updateRole', user.id), {role: newRole}, {preserveScroll: true});
+};
+
+/* ########## BARRE DE RECHERCHE ############################################################################*/
+/** escapeHtml ==> But : Protège des injections HTML (XSS) quand on insère du HTML à la main (v-html)*/
+const escapeHtml = (s) =>
+    String(s ?? '').replace(/[&<>"]/g,
+        c => ({
+            '&':'&amp;',
+            '<':'&lt;',
+            '>':'&gt;',
+            '"':'&quot;'
+        }[c]));
+        // Ex.: "<scr" + "ipt>alert(1)</scr" + "ipt>" devient &lt;script&gt;alert(1)&lt;/script&gt;.
+
+
+/** Surligne le terme recherché avec <mark> en évitant le XSS  - On échappe d'abord le HTML pour éviter le XSS */
+const highlight = (text, search) => {
+    const safe = escapeHtml(text);
+    if (!search) return safe; //Si aucun terme recherché, on renvoie le texte tel quel.
+
+    // On échappe les caractères spéciaux de "search" pour la RegExp.
+    const esc = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); //préparation (échapper la recherche pour la regex).
+    return safe.replace(new RegExp(`(${esc})`, 'gi'), //fonctionnalité (surlignage avec <mark>).
+        '<mark class="bg-yellow-200 px-1 rounded">$1</mark>');
+};
+
+//searchUser persiste entre les pages/pagination (grâce à useRemember)
+const searchUser = useRemember(props.filters?.search ?? '', 'admin.users.search');
 const searchEvent = ref('');
+
+
+watch(
+    searchUser,
+    debounce((v) => {
+        router.get(
+            route('admin.index'),
+            { search: v },
+            {
+                preserveState: true,
+                replace: true,
+                preserveScroll: true  // ne remonte pas la page
+            });
+    }));
+
+/* ########## TRIER/FILTRER LE TABLEAU USER ####################################################################*/
+
 const sortField = ref('created_at');
 const sortAsc = ref(true);
-
-const highlight = (text, search) => {
-    if (!search) return text;
-    const regex = new RegExp(`(${search})`, 'gi');
-    return text.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>');
-};
 
 const sortBy = (field) => {
     if (sortField.value === field) {
@@ -36,16 +144,37 @@ const sortBy = (field) => {
     }
 };
 
-const isSuperAdmin = () => currentUser.role === 'Super-admin';
-
 const sortedUsers = computed(() => {
-    return [...props.users.data].sort((a, b) => {
-        let aField = a[sortField.value] ?? '';
-        let bField = b[sortField.value] ?? '';
-        if (typeof aField === 'string') aField = aField.toLowerCase();
-        if (typeof bField === 'string') bField = bField.toLowerCase();
-        return sortAsc.value ? aField > bField ? 1 : -1 : aField < bField ? 1 : -1;
-    });
+    const fieldName   = sortField.value; // colonne choisie (pseudo, email, ...)
+    const isAscending = sortAsc.value;   // sens du tri
+
+    // 0) Petit helper pour convertir proprement "anonyme" en booléen (gère 0/1, "0"/"1", true/false, null)
+    const toBool = (x) => !!Number(x);
+
+    // 1) Séparer les utilisateurs : non-anonymes d’un côté, anonymes de l’autre
+    const nonAnonymous = props.users.data.filter(u => !toBool(u.anonyme));
+    const anonymous    = props.users.data.filter(u =>  toBool(u.anonyme));
+
+    // 2) Définir un comparateur pour trier par la colonne choisie
+    const normalize = (v) => {
+        if (v == null) return '';                    // null/undefined -> chaîne vide
+        return typeof v === 'string' ? v.toLowerCase() : v; // strings en minuscule pour un tri case-insensitive
+    };
+
+    const compareByField = (a, b) => {
+        const aValue = normalize(a[fieldName]);
+        const bValue = normalize(b[fieldName]);
+
+        if (aValue < bValue) return isAscending ? -1 : 1;
+        if (aValue > bValue) return isAscending ?  1 : -1;
+        return 0; // égalité
+    };
+
+    // 3) On trie chaque groupe, puis on remet les non-anonymes en premier
+    nonAnonymous.sort(compareByField);
+    anonymous.sort(compareByField);
+
+    return [...nonAnonymous, ...anonymous];
 });
 
 const filteredUsers = computed(() => {
@@ -58,38 +187,7 @@ const filteredUsers = computed(() => {
     );
 });
 
-const getUserGlobalIndex = (index) => {
-    return ((props.users.current_page - 1) * props.users.per_page) + index + 1;
-};
-
-const getEventGlobalIndex = (index) => {
-    return ((props.events.current_page - 1) * props.events.per_page) + index + 1;
-};
-
-const cannotEditRole = (user) => {
-    const isOlderSuperAdmin = user.roles[0]?.name === 'Super-admin' && new Date(user.created_at) < currentUserCreatedAt;
-    return user.id === currentUserId || user.anonyme || isOlderSuperAdmin;
-};
-
-const toggleActivation = (user) => {
-    if (user.anonyme || user.roles.some(r => r.name === 'Super-admin')) return;
-    if (!confirm(`Voulez-vous ${user.is_actif ? 'désactiver' : 'activer'} ${user.pseudo} ?`)) return;
-    router.post(route('users.toggleActivation', user.id), {}, {preserveScroll: true});
-};
-
-const anonymizeUser = (user) => {
-    if (user.roles.some(r => r.name === 'Super-admin') || user.anonyme) return;
-    if (!confirm(`Voulez-vous anonymiser ${user.pseudo} ?`)) return;
-    router.post(route('users.anonymize', user.id), {}, {preserveScroll: true});
-};
-
-const updateRole = (user, event) => {
-    if (cannotEditRole(user)) return;
-    const newRole = event.target.value;
-    if (!confirm(`Attribuer le rôle "${newRole}" à ${user.pseudo} ?`)) return;
-    router.post(route('users.updateRole', user.id), {role: newRole}, {preserveScroll: true});
-};
-
+/* ########## TRIER/FILTRER LE TABLEAU EVENTS ###############################################################*/
 const filteredEvents = computed(() => {
     const query = searchEvent.value.toLowerCase();
     return props.events.data.filter(event =>
@@ -98,6 +196,21 @@ const filteredEvents = computed(() => {
     );
 });
 
+/* ########## ACTIVER/DESACTIVER UN USER  ##################################################################*/
+const toggleActivation = (user) => {
+    if (user.anonyme || user.roles.some(r => r.name === 'Super-admin')) return;
+    if (!confirm(`Voulez-vous ${user.is_actif ? 'désactiver' : 'activer'} ${user.pseudo} ?`)) return;
+    router.post(route('users.toggleActivation', user.id), {}, {preserveScroll: true});
+};
+
+/* ########## ANOMYSER UN USER #############################################################################*/
+const anonymizeUser = (user) => {
+    if (user.roles.some(r => r.name === 'Super-admin') || user.anonyme) return;
+    if (!confirm(`Voulez-vous anonymiser ${user.pseudo} ?`)) return;
+    router.post(route('users.anonymize', user.id), {}, {preserveScroll: true});
+};
+
+/* ########## ACTIVER/DESACTIVER UN EVENT ##################################################################*/
 const toggleEventActivation = (event) => {
     if (!confirm(`Voulez-vous ${event.inactif ? 'activer' : 'désactiver'} l'événement "${event.name_event}" ?`)) {
         return;
@@ -116,6 +229,7 @@ const toggleEventActivation = (event) => {
     });
 };
 
+/* ########## VALIDER/REFUSER UN EVENT #######################################################################*/
 const acceptEvent = (event) => {
     if (!confirm(`Accepter l'événement "${event.name_event}" ?`)) return;
     router.post(route('events.accept', event.id), {}, {
@@ -134,16 +248,30 @@ const refuseEvent = (event) => {
     });
 };
 
+/* ########## CREER DES USERS FICTIFS #####################################################################/
+
+/* ...imports existants... */
+const seedUsers = () => {
+    if (!confirm('Créer 10 utilisateurs de test ?')) return;
+    router.post(route('admin.seed.users'), { count: 10 }, {
+        preserveScroll: true,
+        onSuccess: () => router.visit(route('admin.index'), {
+            preserveScroll: true, preserveState: false
+        }),
+    });
+};
 
 </script>
 
 <template>
-    <Head title="Gestion Super Admin"/>
+    <Head :title="adminTitle"/>
 
     <AuthenticatedLayout>
         <div class="py-4 bg-[#f9f5f2] min-h-screen">
             <div class="mx-auto w-full px-3 sm:px-5">
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
+
+
                     <!-- Titre principal avec icône -->
                     <div class="bg-transparent border-2 border-[#ffb347] rounded-lg p-4 mb-6"
                          style="background-color: rgba(255, 179, 71, 0.05);">
@@ -151,9 +279,48 @@ const refuseEvent = (event) => {
                             <div class="bg-[#ffb347] text-white rounded-full p-3">
                                 <i class="fa-solid fa-user-shield text-xl"></i>
                             </div>
-                            <h1 class="text-2xl sm:text-3xl font-bold text-gray-800">Gestion Super Admin</h1>
+                            <h1 class="text-2xl sm:text-3xl font-bold text-gray-800">{{ adminTitle }}</h1>
                         </div>
                     </div>
+
+                    <!-- Bandeau d’accueil (toujours visible) -->
+                    <div class="mb-6 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fa-solid fa-circle-info mt-1 text-[#59c4b4]"></i>
+                            <div>
+                                <p class="font-semibold text-gray-800">Bienvenue dans l’espace d’administration</p>
+                                <ul class="mt-2 text-sm text-gray-700 list-disc pl-5 space-y-1">
+                                    <li>Utilisez les barres de recherche pour filtrer.</li>
+                                    <li>Cliquez sur un <span class="font-semibold">Pseudo</span> pour ouvrir le profil.</li>
+                                    <li>Cliquez sur les entêtes <span class="font-semibold">Pseudo / Nom / Email</span> pour trier.</li>
+                                    <li>Les boutons permettent d’activer/désactiver, anonymiser ou changer un rôle.</li>
+
+                                    <!-- Génération d’utilisateurs (réservé Super-admin) -->
+                                    <li v-if="isSuperAdmin()">
+                                        Générer 10 utilisateurs de test autant de fois que nécessaire
+                                        (réservé <span class="font-semibold">Super-admin</span>).
+                                    </li>
+
+                                    <!-- NOUVEAU : export -->
+                                    <li>
+                                        Export CSV : utilisez les boutons “<span class="font-semibold">Exporter les utilisateurs</span>”
+                                        et “<span class="font-semibold">Exporter les événements</span>”.
+                                    </li>
+                                    <li>
+                                        Seul un <span class="font-semibold">Super-admin</span> peut attribuer le rôle « Super-admin ».
+                                    </li>
+                                    <li>
+                                        Pour <span class="font-semibold">anonymiser</span> ou <span class="font-semibold">désactiver</span> un <span class="font-semibold">Admin</span>,
+                                        un Super-admin doit d’abord le faire passer en « User ».
+                                    </li>
+                                    <li>
+                                        Personne ne peut <span class="font-semibold">s’auto-désactiver</span> ni s’<span class="font-semibold">auto-anonymiser</span>.
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
 
                     <!-- Layout responsive : vertical sur mobile, horizontal sur desktop -->
                     <!-- <div class="flex flex-col xl:flex-row gap-4 sm:gap-6">    || pivot - mettre côte à cote -->
@@ -184,20 +351,22 @@ const refuseEvent = (event) => {
                                     class="inline-flex items-center gap-2 bg-gradient-to-r from-[#ffb347] to-[#ff9500] hover:from-[#ff9500] hover:to-[#e6850e] text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
                                 >
                                     <i class="fa-solid fa-download"></i>
-                                    Exporter en .csv
+                                    Exporter les utilisateurs (.csv)
                                 </a>
                             </div>
 
-                            <!-- Text explicatif -->
-                            <p class="mb-4 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-3 leading-relaxed">
-                                Vous pouvez trier les utilisateurs en cliquant sur les intitulés de colonnes
-                                <span class="font-semibold text-gray-800">Pseudo</span>,
-                                <span class="font-semibold text-gray-800">Nom</span> ou
-                                <span class="font-semibold text-gray-800">Email</span>.
-                                Un premier clic affiche les données en ordre croissant (A → Z).
-                                Un second clic rétablit l’ordre initial défini par défaut.
-                                Cette fonctionnalité rend la consultation des informations plus rapide et intuitive.
-                            </p>
+                            <!-- Bouton utilisateurs tests -->
+                            <button
+                                v-if="isSuperAdmin()"
+                                @click="seedUsers"
+                                class="inline-flex items-center gap-2 bg-gradient-to-r from-[#59c4b4] to-[#3aa796]
+                             hover:from-[#3aa796] hover:to-[#318e80] text-white px-4 py-2 rounded-lg
+                             font-semibold transition-all duration-300 transform hover:scale-105 shadow-md">
+                                <i class="fa-solid fa-user-plus"></i>
+                                Générer 10 utilisateurs tests
+                            </button>
+                            <br><br>
+
 
                             <!-- Table des utilisateurs -->
                             <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
@@ -237,10 +406,16 @@ const refuseEvent = (event) => {
                                     <tr v-for="(user, index) in filteredUsers" :key="user.id"
                                         :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
                                         class="hover:bg-blue-50 transition-colors">
+
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(user.pseudo, searchUser)"
-                                                  class="font-medium text-gray-900"></span>
+                                            <Link
+                                                :href="route('users.show', user.id)"
+                                            class="font-medium text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                            >
+                                            <span v-html="highlight(user.pseudo, searchUser)"></span>
+                                            </Link>
                                         </td>
+
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <span v-html="highlight(user.first_name + ' ' + user.last_name, searchUser)"
                                                   class="text-gray-700"></span>
@@ -261,6 +436,8 @@ const refuseEvent = (event) => {
                                                     Inactif
                                                 </span>
                                         </td>
+
+
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <select
                                                 :value="user.roles[0]?.name || 'User'"
@@ -279,10 +456,18 @@ const refuseEvent = (event) => {
                                                 <option value="Super-admin" v-if="isSuperAdmin()">Super-admin</option>
                                             </select>
                                         </td>
+
+
+
                                         <td class="px-4 py-3 whitespace-nowrap space-x-2">
                                             <button
                                                 @click="toggleActivation(user)"
-                                                :disabled="user.anonyme || user.roles.some(r => r.name === 'Super-admin')"
+                                                :disabled="
+                                                user.id === nowConnectUserId || // NE PAS se désactiver soi-même
+                                                user.anonyme ||
+                                                user.roles.some(r => r.name === 'Super-admin') ||
+                                                user.roles.some(r => r.name === 'Admin')//pas touche aux Super-admins
+  "
                                                 class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                                                 :class="user.is_actif
                                                         ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'
@@ -293,13 +478,21 @@ const refuseEvent = (event) => {
                                                 {{ user.is_actif ? 'Désactiver' : 'Activer' }}
                                             </button>
 
+                                            <!-- Bouton Anonymiser -->
                                             <button
+                                                v-if="isSuperAdmin()"
                                                 @click="anonymizeUser(user)"
-                                                :disabled="user.roles.some(r => r.name === 'Super-admin') || user.anonyme"
-                                                class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                                                :disabled="user.roles.some(r => ['Admin', 'Super-admin'].includes(r.name)) || user.anonyme"
+                                                class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium
+                                               bg-gradient-to-r from-orange-500 to-orange-600
+                                               hover:from-orange-600 hover:to-orange-700
+                                               text-white transition-all duration-300 transform
+                                               hover:scale-105 shadow-sm hover:shadow-md
+                                               disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100 disabled:bg-gradient-to-r disabled:from-gray-300 disabled:to-gray-400 disabled:text-gray-700"
                                             >
                                                 Anonymiser
                                             </button>
+
                                         </td>
                                     </tr>
                                     </tbody>
@@ -343,6 +536,17 @@ const refuseEvent = (event) => {
                                     placeholder="Rechercher un événement..."
                                     class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition-all"
                                 />
+                            </div>
+
+                            <!-- Bouton d'export Événements -->
+                            <div class="mb-4">
+                                <a
+                                    :href="route('admin.export.events', { q: searchEvent })"
+                                    class="inline-flex items-center gap-2 bg-gradient-to-r from-[#ffb347] to-[#ff9500] hover:from-[#ff9500] hover:to-[#e6850e] text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
+                                >
+                                    <i class="fa-solid fa-download"></i>
+                                    Exporter les événements (.csv)
+                                </a>
                             </div>
 
                             <!-- Table des événements -->
