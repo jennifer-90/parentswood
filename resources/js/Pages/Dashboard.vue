@@ -265,7 +265,9 @@ onMounted(() => {
                                          class="bg-white border border-[#59c4b4]/30 rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 hover:border-[#59c4b4] transform hover:scale-[1.02]">
                                         <div class="flex items-start justify-between">
                                             <div class="flex-1">
+
                                                 <h3 class="font-semibold mb-1 text-sm text-gray-800">{{ event.name_event }}</h3>
+
                                                 <div class="text-xs text-gray-600 space-y-1">
                                                     <div class="flex items-center">
                                                         <i class="fa-solid fa-calendar text-[#59c4b4] mr-2"></i>

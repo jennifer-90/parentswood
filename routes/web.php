@@ -176,12 +176,33 @@ Route::middleware(['auth', 'superadmin' ])
     ->name('admin.seed.users');
 
 
-Route::post('/events/{event}/cancel', [EventController::class, 'cancel'])
-    ->name('events.cancel')->middleware('auth');
+Route::middleware('auth')->group(function () {
+    // Annulation par le créateur UNIQUEMENT
+    Route::post('/events/{event}/cancel', [EventController::class, 'cancel'])
+        ->name('events.cancel');
+
+    // Activation/Désactivation par Admin/Super-admin (dashboard)
+    Route::post('/events/{event}/toggle-active', [EventController::class, 'toggleActive'])
+        ->name('events.toggleActive');
+});
+
+
 
 Route::post('/events/{event}/report', [EventController::class, 'report'])
     ->name('events.report')->middleware('auth');
 
+
+
+// routes/web.php
+Route::middleware('auth')->group(function () {
+    // Signaler un event (incrémente reports_count une seule fois par session/user)
+    Route::post('/events/{event}/report', [EventController::class, 'report'])
+        ->name('events.report');
+
+    // (Optionnel) bouton admin pour remettre à zéro le compteur
+    Route::post('/events/{event}/reports/clear', [EventController::class, 'clearReports'])
+        ->name('events.reports.clear');
+});
 
 
 

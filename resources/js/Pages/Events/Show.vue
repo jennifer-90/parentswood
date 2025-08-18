@@ -4,10 +4,14 @@ import { usePage, router, Link } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Head } from '@inertiajs/vue3'
 
+
 const props = defineProps({
     event: Object,
     messages: Array,
-})
+    already_reported: Boolean,
+});
+
+
 
 const page = usePage()
 const currentUser = page.props.auth.user
@@ -131,12 +135,31 @@ const deactivateEvent = () => {
     );
 };
 
+// Show.vue (script setup)
+const canCancelEvent = computed(() =>
+    currentUser?.id === props.event.created_by && !props.event.cancelled_at
+);
+
 const cancelEvent = () => {
-    if (!confirm("Annuler cet événement ?")) return;
+    if (!confirm("Annuler cet événement ? Cette action est définitive.")) return;
     router.post(route('events.cancel', props.event.id), {}, {
         onSuccess: () => router.visit(route('events.index'))
     });
 };
+
+
+
+
+const alreadyReported = ref(!!props.already_reported);
+
+const reportEvent = () => {
+    if (!currentUser) { router.visit(route('login')); return; }
+    router.post(route('events.report', props.event.id), {}, {
+        preserveScroll: true,
+        onSuccess: () => { alreadyReported.value = true; }
+    });
+};
+
 
 
 
@@ -211,13 +234,31 @@ const cancelEvent = () => {
                                             </div>
                                             <div>
                                                 <p class="text-sm text-gray-500">Organisateur</p>
-                                                <Link
-                                                    :href="route('users.show', event.creator.id)"
-                                                    class="font-medium text-[#59c4b4] hover:underline flex items-center"
-                                                >
-                                                    {{ event.creator.pseudo }}
-                                                    <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-xs"></i>
-                                                </Link>
+
+
+                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                                                    <Link
+                                                        v-if="event.creator"
+                                                        :href="route('users.show', event.creator.id)"
+                                                        class="text-blue-600 hover:underline"
+                                                    >
+                                                        {{ event.creator.pseudo }}
+                                                    </Link>
+                                                    <span v-else>Inconnu</span>
+
+                                                    <!-- Badge "a annulé" si l'event est annulé par le créateur -->
+                                                    <span
+                                                        v-if="event.cancelled_at && event.cancelled_by === event.created_by"
+                                                        class="ml-2 inline-flex items-center text-[12px] font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded"
+                                                        :title="`le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'})}`"
+                                                    >
+    a annulé
+  </span>
+                                                </td>
+
+
+
+
                                             </div>
                                         </div>
                                         <div class="flex items-start">
@@ -396,12 +437,36 @@ const cancelEvent = () => {
 
                     <div class="flex flex-col sm:flex-row gap-3">
 
-                        <button v-if="canEditEvent && !event.inactif"
-                                @click="cancelEvent"
-                                class="px-4 py-2.5 border border-red-300 text-red-600 ...">
+                        <button
+                            @click="reportEvent"
+                            :disabled="alreadyReported"
+                            class="px-4 py-2.5 border rounded-lg flex items-center justify-center"
+                            :class="alreadyReported
+          ? 'border-amber-200 text-amber-300 cursor-not-allowed'
+          : 'border-amber-300 text-amber-700 hover:bg-amber-50'">
+                            <i class="fa-solid fa-bell mr-2"
+                               :class="alreadyReported ? 'text-amber-300' : 'text-amber-600'"></i>
+                            {{ alreadyReported ? 'Signalé' : 'Signaler' }}
+                        </button>
+
+
+                        <!-- Show.vue (template): dans la zone des boutons d’action -->
+                        <button
+                            v-if="canCancelEvent"
+                            @click="cancelEvent"
+                            class="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+                        >
                             <i class="fa-solid fa-ban mr-2"></i>
                             Annuler l'événement
                         </button>
+
+                        <!-- Petit badge d’info si déjà annulé -->
+                        <span
+                            v-if="event.cancelled_at"
+                            class="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800"
+                        >
+  Annulé le {{ formatDate(event.cancelled_at) }}
+</span>
 
 
                     </div>

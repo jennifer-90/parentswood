@@ -295,11 +295,8 @@ class EventController extends Controller
      */
     public function show(Event $event)
     {
-        if (!auth()->check()) {
-            return redirect()->route('login');
-        }
+        if (!auth()->check()) return redirect()->route('login');
 
-        // Vérifier si l'événement est inactif et que l'utilisateur n'est ni admin ni créateur
         if ($event->inactif && !auth()->user()->hasAnyRole(['Admin', 'Super-admin']) && auth()->id() !== $event->created_by) {
             return redirect()->route('events.index')->with('error', 'Cet événement n\'est plus disponible.');
         }
@@ -312,14 +309,16 @@ class EventController extends Controller
         return Inertia::render('Events/Show', [
             'event' => [
                 ...$event->toArray(),
-                'creator' => $event->creator,
+                'creator'      => $event->creator,
                 'participants' => $event->participants,
-                'created_by' => $event->created_by,
-                'can_edit' => auth()->id() === $event->created_by || auth()->user()->hasAnyRole(['Admin', 'Super-admin']),
+                'created_by'   => $event->created_by,
+                'can_edit'     => auth()->id() === $event->created_by || auth()->user()->hasAnyRole(['Admin', 'Super-admin']),
             ],
-            'messages' => $messages,
+            'messages'          => $messages,
+            'already_reported'  => session()->has("reported_event_{$event->id}"),
         ]);
     }
+
 
     /**
      * Désactive un événement au lieu de le supprimer
@@ -354,10 +353,9 @@ class EventController extends Controller
 
 
 
-    public function destroy(Event $event)
+    public function destroy(Request $request, Event $event)
     {
-        // Alias volontaire : “supprimer” = désactiver
-        return $this->deactivate($event);
+        return $this->deactivate($request, $event);
     }
 
 
@@ -400,16 +398,23 @@ class EventController extends Controller
      */
     public function toggleActive(Event $event)
     {
-        // Bascule entre actif et inactif
+        // Admin / Super-admin uniquement
+        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+            return back()->with('error', 'Action non autorisée.');
+        }
+
+        // Si l’événement a été annulé par le créateur -> non réactivable
+        if ($event->cancelled_at && $event->inactif === true) {
+            return back()->with('error', 'Événement annulé par le créateur : réactivation interdite.');
+        }
+
         $event->update(['inactif' => !$event->inactif]);
 
-        return back()->with([
-            'status' => 'success',
-            'message' => $event->inactif
-                ? 'Événement désactivé avec succès.'
-                : 'Événement activé avec succès.'
-        ]);
+        return back()->with('success',
+            $event->inactif ? 'Événement désactivé.' : 'Événement activé.'
+        );
     }
+
 
     /**
      * Marque un événement comme confirmé et actif.
@@ -478,27 +483,61 @@ class EventController extends Controller
     //Annuler event
     public function cancel(Event $event)
     {
-        // créateur OU admin/super-admin
-        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin','Super-admin'])) {
-            return back()->with('error', 'Action non autorisée.');
+        // Créateur SEULEMENT
+        if (auth()->id() !== $event->created_by) {
+            return back()->with('error', 'Seul le créateur peut annuler cet événement.');
+        }
+
+        // Si déjà annulé, on ne fait rien
+        if ($event->cancelled_at) {
+            return back()->with('info', 'Cet événement est déjà annulé.');
         }
 
         $event->update([
             'inactif'      => true,
-            'cancel_note'  => 'Événement annulé le '.now()->format('d/m/Y à H:i'),
+            'cancel_note'  => 'Événement annulé le ' . now()->format('d/m/Y à H:i'),
             'cancelled_at' => now(),
-            'cancelled_by' => auth()->id(),
+            'cancelled_by' => auth()->id(), // = créateur
         ]);
 
-        return back()->with('success', "L'événement a été annulé.");
+        return back()->with('success', "L'événement a été annulé (action définitive).");
     }
 
-//faire sonner la cloche)
+
+
+// Empêche plusieurs incréments par la même session
     public function report(Event $event)
     {
-        $event->increment('reports_count'); // +1
-        return back()->with('success', 'Événement signalé. Merci !');
+        // Tous les users sont loggés chez toi, donc ok.
+        $key = "reported_event_{$event->id}";
+        if (session()->has($key)) {
+            return back()->with('success', 'Merci, vous avez déjà signalé cet événement.');
+        }
+
+        // Incrément simple et marquage session
+        $event->increment('reports_count');
+        session()->put($key, true);
+
+        return back()->with('success', 'Merci pour votre signalement.');
     }
+
+
+
+// Remise à zéro du compteur (à déclencher côté Admin/Super-admin)
+    public function clearReports(Event $event)
+    {
+        if (!auth()->user()->hasAnyRole(['Admin','Super-admin'])) {
+            abort(403);
+        }
+
+        $event->update(['reports_count' => 0]);
+
+        // Optionnel : vider les “déjà signalé” de toutes les sessions n’est pas faisable,
+        // mais ce n’est pas gênant : au pire l’utilisateur verra “déjà signalé” jusqu’à
+        // la fin de sa session.
+        return back()->with('success', 'Signalements remis à zéro.');
+    }
+
 
 
 }

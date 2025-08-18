@@ -82,8 +82,12 @@ class UserController extends Controller
             ->withQueryString();
 
 
-        $events = Event::with(['creator:id,pseudo', 'validatedBy:id,pseudo', 'participants:id'])
-            ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at', 'inactif', 'confirmed', 'validated_by_id', 'validated_at')
+        $events = Event::with([
+            'creator:id,pseudo',
+            'validatedBy:id,pseudo',
+            'cancelledBy:id,pseudo',
+            ])
+            ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at', 'inactif', 'confirmed', 'validated_by_id', 'validated_at',  'reports_count', 'cancelled_at','cancelled_by')
             ->orderBy('created_at', 'desc')
             ->paginate(10)
             ->withQueryString();

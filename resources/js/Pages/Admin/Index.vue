@@ -160,13 +160,44 @@ const filteredUsers = computed(() => {
 });
 
 /* ########## TRIER/FILTRER LE TABLEAU EVENTS ###############################################################*/
-const filteredEvents = computed(() => {
-    const query = searchEvent.value.toLowerCase();
-    return props.events.data.filter(event =>
-        event.name_event.toLowerCase().includes(query) ||
-        event.location.toLowerCase().includes(query)
-    );
+const prioritizedEvents = computed(() => {
+
+    // terme tapé dans la barre de recherche
+    const searchTerm = (searchEvent.value || '').trim().toLowerCase();
+
+    // liste brute renvoyée par le backend (ou tableau vide si rien)
+    const allEvents = Array.isArray(props.events?.data) ? props.events.data : [];
+
+    // 2 paniers : avec signalements / sans signalements
+    const reportedEvents = []; // cloche rouge (reports_count > 0)
+    const regularEvents  = []; // cloche grise (0)
+
+    // on parcourt dans l'ordre d'origine pour conserver cet ordre
+    for (const event of allEvents) {
+        const nameLower     = (event.name_event || '').toLowerCase();
+        const locationLower = (event.location   || '').toLowerCase();
+
+        const matchesSearch =
+            !searchTerm ||
+            nameLower.includes(searchTerm) ||
+            locationLower.includes(searchTerm);
+
+        if (!matchesSearch) continue;
+
+        const hasReports = Number(event.reports_count || 0) > 0;
+        if (hasReports) {
+            reportedEvents.push(event); // en haut
+        } else {
+            regularEvents.push(event);  // ensuite
+        }
+    }
+
+    // d’abord les signalés, puis les autres
+    return reportedEvents.concat(regularEvents);
 });
+
+
+
 
 /* ########## ACTIVER/DESACTIVER UN USER  ##################################################################*/
 const toggleActivation = (user) => {
@@ -232,6 +263,24 @@ const seedUsers = () => {
         }),
     });
 };
+
+
+/* ########## RESET ALERT #####################################################################*/
+const clearEventReports = (event) => {
+    if (!confirm(`Remettre à zéro les signalements pour "${event.name_event}" ?`)) return;
+
+    router.post(route('events.reports.clear', event.id), {}, {
+        preserveScroll: true,
+        onSuccess: () => {
+            // MAJ optimiste de l’UI
+            event.reports_count = 0;
+        },
+        onError: () => {
+            alert('Impossible de remettre à zéro les signalements.');
+        }
+    });
+};
+
 
 </script>
 
@@ -339,7 +388,7 @@ const seedUsers = () => {
 
                             <!--########## TABLEAU USERS ##########-->
                             <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
-                                <table class="min-w-full">
+                                <table class="min-w-full ">
                                     <thead class="bg-gray-50">
                                     <tr>
                                         <!-- title pseudo -->
@@ -507,13 +556,32 @@ const seedUsers = () => {
                             </div>
                         </div>
                         <!--########## SECTION EVENTS ##########-->
+                        <hr>
+                        <div class="mb-4 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4">
+                            <div class="flex items-start gap-3">
+                                <i class="fa-solid fa-circle-info mt-1 text-[#59c4b4]" aria-hidden="true"></i>
+                                <div>
+                                    <p class="font-semibold text-gray-800">Aide – Gestion des Événements</p>
+                                    <ul class="mt-2 text-sm text-gray-700 list-disc pl-5 space-y-1 leading-relaxed">
+                                        <li>Cliquez sur le <strong>nom</strong> d’un événement pour ouvrir sa page (vue détail).</li>
+                                        <li>La <strong>cloche</strong> indique le nombre de signalements ; elle devient <strong class="text-red-600">rouge</strong> si &gt; 0.</li>
+                                        <li>Le bouton <em>Reset</em> remet le compteur de signalements à 0 <template v-if="isSuperAdmin()"> (Super-admin & Admin)</template><template v-else>(Admin)</template>.</li>
+                                        <li>Le badge <strong>Actif / Inactif</strong> reflète la visibilité. Le bouton <em>Activer/Désactiver</em> bascule l’état.</li>
+                                        <li><strong>Validation</strong> : <em>Accepter</em> publie l’événement (confirmé = true, inactif = false) ; <em>Refuser</em> le rend inactif.</li>
+                                        <li><strong>Annulation</strong> : le créateur, un Admin ou un Super-admin peut annuler (l’événement passe Inactif, avec note/date).</li>
+                                        <li>Les événements <strong>inactifs</strong> ne sont visibles que par l’Admin/Super-admin et le créateur.</li>
+                                        <li>Le bouton “Exporter les événements (.csv)” exporte selon la recherche en cours.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="xl:flex-1 bg-[#59c4b4]/10 p-4 rounded-lg shadow-md" style="min-height: 600px;">
                             <!-- Titre de section avec icône -->
                             <div class="bg-[#59c4b4] text-white rounded-lg p-3 mb-4 flex items-center gap-3">
                                 <i class="fa-solid fa-calendar-days text-lg"></i>
                                 <h2 class="text-lg font-semibold">Gestion des Événements</h2>
                             </div>
-
                             <!--########## BARRE SEARCH EVENT ##########-->
                             <div class="mb-4">
                                 <input
@@ -537,7 +605,8 @@ const seedUsers = () => {
 
                             <!--########## TABLEAU DES EVENTS ##########-->
                             <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
-                                <table class="min-w-full">
+
+                                <table class="min-w-full table-fixed">
                                     <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -551,6 +620,9 @@ const seedUsers = () => {
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Nom
                                         </th>
+
+
+
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Lieu
                                         </th>
@@ -560,6 +632,12 @@ const seedUsers = () => {
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Créateur
                                         </th>
+
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Statut
+                                        </th>
+
+
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Confirmation
                                         </th>
@@ -569,64 +647,130 @@ const seedUsers = () => {
                                     </tr>
                                     </thead>
                                     <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="(event, index) in filteredEvents" :key="event.id"
-                                        :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
+
+                                    <tr v-for="(event, index) in prioritizedEvents" :key="event.id"
+
+                                    :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
                                         class="hover:bg-blue-50 transition-colors">
+
+
                                         <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {{ getEventGlobalIndex(index) }}
                                         </td>
 
-                                        <i class="fa-solid fa-bell"
-                                           :class="event.reports_count > 0 ? 'text-red-600' : 'text-gray-400'"></i>
-                                        <span v-if="event.reports_count" class="ml-1 text-xs font-semibold">
-  {{ event.reports_count }}
-</span>
 
 
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(event.name_event, searchEvent)"
-                                                  class="font-medium text-gray-900"></span>
+                                            <div class="flex items-center">
+                                                <i class="fa-solid fa-bell"
+                                                   :class="event.reports_count > 0 ? 'text-red-600' : 'text-gray-400'"></i>
+                                                <span v-if="event.reports_count" class="ml-1 text-xs font-semibold">
+      {{ event.reports_count }}
+    </span>
+
+                                                <!-- Bouton reset si au moins un signalement -->
+                                                <button
+                                                    v-if="event.reports_count > 0"
+                                                    @click="clearEventReports(event)"
+                                                    class="ml-2 inline-flex items-center px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50"
+                                                    title="Remettre à zéro les signalements"
+                                                >
+                                                    <i class="fa-solid fa-rotate-left mr-1"></i>
+                                                    Reset
+                                                </button>
+                                            </div>
                                         </td>
-                                        <td class="px-4 py-3 whitespace-nowrap">
+
+
+
+
+
+                                        <td class="px-4 py-3 ">
+                                            <Link
+                                                :href="route('events.show', event.id)"
+                                                class="font-medium text-blue-600 hover:underline"
+                                            >
+                                                <span v-html="highlight(event.name_event, searchEvent)"></span>
+                                            </Link>
+                                        </td>
+
+
+
+
+                                        <td class="px-4 py-3 ">
                                             <span v-html="highlight(event.location, searchEvent)"
                                                   class="text-gray-700"></span>
                                         </td>
+
+
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
                                             {{ new Date(event.date).toLocaleDateString('fr-BE') }}
                                         </td>
+
+
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                                            <span>{{ event.creator?.pseudo ?? 'Inconnu' }}</span>
+                                            <div>{{ event.creator?.pseudo ?? 'Inconnu' }}</div>
+
+                                            <div
+                                                v-if="event.cancelled_at"
+                                                class="mt-1 inline-block text-[11px] font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded"
+                                                :title="`le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'})}`"
+                                            >
+                                                a annulé
+                                            </div>
                                         </td>
+
+
+
+
+
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                                <span v-if="event.confirmed == true"
-                                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                    <i class="fa fa-check mr-1"></i> Accepté
-                                                    <span v-if="event.validated_by"
-                                                          class="block text-xs text-gray-500 mt-1">
-                                                        par {{
-                                                            event.validated_by.pseudo
-                                                        }} | {{
-                                                            new Date(event.validated_at).toLocaleDateString('fr-BE')
-                                                        }}
-                                                    </span>
-                                                </span>
-                                            <span v-else-if="event.confirmed == false"
-                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                    <i class="fa fa-close mr-1"></i> Refusé
-                                                    <span v-if="event.validated_by"
-                                                          class="block text-xs text-gray-500 mt-1">
-                                                        par {{
-                                                            event.validated_by.pseudo
-                                                        }} | {{
-                                                            new Date(event.validated_at).toLocaleDateString('fr-BE')
-                                                        }}
-                                                    </span>
-                                                </span>
+  <span v-if="!event.inactif"
+        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+    <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
+    Actif
+  </span>
                                             <span v-else
-                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                    <i class="fa fa-clock mr-1"></i> En attente
-                                                </span>
+                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+    <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
+    Inactif
+  </span>
                                         </td>
+
+
+                                        <td class="px-4 py-3 text-sm text-gray-700">
+                                            <div v-if="event.confirmed === true">
+                                                <!-- ligne 1 : badge -->
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+      <i class="fa fa-check mr-1"></i> Accepté
+    </span>
+
+                                                <!-- lignes 2 & 3 : infos, chacune à la ligne -->
+                                                <div v-if="event.validated_by" class="mt-1 text-xs text-gray-500 leading-snug break-words">
+                                                    <div>par {{ event.validated_by.pseudo }}</div>
+                                                    <div>{{ new Date(event.validated_at).toLocaleDateString('fr-BE') }}</div>
+                                                </div>
+                                            </div>
+
+                                            <div v-else-if="event.confirmed === false">
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+      <i class="fa fa-close mr-1"></i> Refusé
+    </span>
+                                                <div v-if="event.validated_by" class="mt-1 text-xs text-gray-500 leading-snug break-words">
+                                                    <div>par {{ event.validated_by.pseudo }}</div>
+                                                    <div>{{ new Date(event.validated_at).toLocaleDateString('fr-BE') }}</div>
+                                                </div>
+                                            </div>
+
+                                            <div v-else>
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+      <i class="fa fa-clock mr-1"></i> En attente
+    </span>
+                                            </div>
+                                        </td>
+
+
+
                                         <td class="px-4 py-3 whitespace-nowrap space-x-2">
                                             <button
                                                 @click="toggleEventActivation(event)"
