@@ -177,8 +177,8 @@ const resetFieldError = (field) => {
 // - previewUrl : DataURL (base64) pour prévisualiser la nouvelle image
 // - currentImageUrl : URL public/storage/... de l'image actuelle
 const imageChanged = ref(false)
-const previewUrl = ref(props.event.image ? `/storage/${props.event.image}` : null)
-const currentImageUrl = ref(props.event.image ? `/storage/${props.event.image}` : null)
+const previewUrl = ref(props.event.picture_event ? `/storage/${props.event.picture_event}` : null)
+const currentImageUrl = ref(props.event.picture_event ? `/storage/${props.event.picture_event}` : null)
 
 
 // ******** Quand l'utilisateur choisit un fichier
@@ -522,24 +522,32 @@ const deactivateEvent = async () => {
                                 </div>
 
                                 <!-- Téléchargement de l'image -->
+                                <!-- Téléchargement de l'image -->
                                 <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">
                                         <i class="fa-solid fa-image mr-2 text-[#59c4b4]"></i>Image de l'événement
                                     </label>
+
                                     <div class="mt-1 flex items-center">
-                                        <label for="picture_event" class="cursor-pointer bg-gray-50 hover:bg-gray-100 text-gray-700 py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#59c4b4]">
+                                        <label
+                                            for="picture_event"
+                                            class="cursor-pointer bg-gray-50 hover:bg-gray-100 text-gray-700 py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#59c4b4]"
+                                        >
                                             <i class="fa-solid fa-upload mr-2"></i>
                                             {{ form.picture_event && form.picture_event.name ? form.picture_event.name : 'Télécharger une image' }}
                                         </label>
+
                                         <input
                                             id="picture_event"
                                             type="file"
                                             class="hidden"
-                                            accept="image/*"
+                                            accept="image/jpeg,image/png"
                                             @change="handleFileChange"
                                         />
+
+                                        <!-- Boutons Supprimer / Rétablir -->
                                         <button
-                                            v-if="(previewUrl || event.image) && !(form.picture_event === 'REMOVE_IMAGE')"
+                                            v-if="(previewUrl || currentImageUrl) && form.picture_event !== 'REMOVE_IMAGE'"
                                             @click="removeCurrentImage"
                                             type="button"
                                             class="ml-3 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
@@ -557,12 +565,16 @@ const deactivateEvent = async () => {
                                             Rétablir
                                         </button>
                                     </div>
+
                                     <p v-if="validationErrors.picture_event" class="mt-1 text-sm text-red-600">
                                         {{ validationErrors.picture_event }}
                                     </p>
 
-                                    <!-- Aperçu de l'image -->
-                                    <div v-if="previewUrl || (currentImageUrl && form.picture_event !== 'REMOVE_IMAGE')" class="mt-4">
+                                    <!-- Aperçu / messages (chaîne unique et adjacente) -->
+                                    <div
+                                        v-if="previewUrl || (currentImageUrl && form.picture_event !== 'REMOVE_IMAGE')"
+                                        class="mt-4"
+                                    >
                                         <p class="text-sm font-medium text-gray-700 mb-2">
                                             {{ previewUrl && imageChanged ? 'Nouvel aperçu :' : 'Image actuelle :' }}
                                         </p>
@@ -584,8 +596,10 @@ const deactivateEvent = async () => {
                                         </div>
                                     </div>
 
-                                    <!-- Message de suppression d'image -->
-                                    <div v-else-if="form.picture_event === 'REMOVE_IMAGE'" class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                                    <div
+                                        v-else-if="form.picture_event === 'REMOVE_IMAGE'"
+                                        class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md"
+                                    >
                                         <p class="text-sm text-yellow-700 flex items-center">
                                             <i class="fas fa-exclamation-triangle mr-2"></i>
                                             L'image sera supprimée lors de l'enregistrement des modifications.
@@ -598,7 +612,15 @@ const deactivateEvent = async () => {
                                             </button>
                                         </p>
                                     </div>
+
+                                    <div
+                                        v-else
+                                        class="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-600"
+                                    >
+                                        Aucune image pour cet événement.
+                                    </div>
                                 </div>
+
 
                                 <!-- Description -->
                                 <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">

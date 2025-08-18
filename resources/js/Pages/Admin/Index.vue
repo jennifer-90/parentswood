@@ -21,7 +21,6 @@ const debounce = (fn, d=300) => {
 const props = defineProps({
     users: Object,
     events: Object,
-    userRole: Array,
 });
 /*==============================================================*/
 /****************************************************************/
@@ -34,12 +33,10 @@ const getEventGlobalIndex = (index) => {
     return ((props.events.current_page - 1) * props.events.per_page) + index + 1;
 };
 
-/* ########## INFOS DU USER CONNECTE A L'HEURE ACTUEL ##########################################################*/
+/* ########## INFOS DU USER CONNECTE A L'HEURE ACTUELLE ##########################################################*/
 const page = usePage(); // donne accès à tout ce qu'Inertia expose (props, auth, etc.)
 const nowConnectUser = page.props.auth.user; // récupère l’utilisateur connecté
 const nowConnectUserId = nowConnectUser.id;
-const nowConnectUserCreatedAt = new Date(nowConnectUser.created_at); // sa date de création => règle de “seniorité” avec isOlderSuperAdmin
-
 
 
 /* ########## TEXTE DYNAMIQUE POUR LE TITRE DE LA PAGE ADMIN ##################################################*/
@@ -52,37 +49,12 @@ const adminTitle = computed(() => {
     }
 });
 
+
 /* ########## CHANGER UN ROLE ##################################################################################*/
 const isSuperAdmin = () => nowConnectUser.role === 'Super-admin'; //déclartion de la variable que si le user connecté a le role de super-admin
-const isSelf = (user) => user.id === nowConnectUserId;
-
-/** Détermine si le menu déroulant (option/select) des rôles doit être désactivé pour ce user */
-const cannotEditRole = (user) => {
-    const targetRole = user.roles?.[0]?.name || 'User'; // "?." ==> évite une erreur si roles n’existe pas (De base impossible)
-
-    // Super-admin qui veut changer le rôle d'un autre utilisateur
-    if (isSuperAdmin()) {
-        const isOlderSuperAdmin = targetRole === 'Super-admin'
-            && new Date(user.created_at) < nowConnectUserCreatedAt;
-        return isSelf(user) || //la personne connecté elle-meme
-            user.anonyme || //la personne est anonymisée
-            isOlderSuperAdmin; //c’est un Super-admin plus ancien que la personne qui essaye de modifier
-    }
-
-    // Pour l'admin : pas soi-même, pas un Super-admin, pas un anonymisé
-    if (nowConnectUser.role === 'Admin') {
-        return isSelf(user) ||
-            user.anonyme ||
-            targetRole === 'Super-admin';
-    }
-
-    // Tous les autres rôles : non modifiable
-    return true;
-};
-
 
 const updateRole = (user, event) => {
-    if (cannotEditRole(user)) return;
+    if (user.cannot_edit_role) return;
     const newRole = event.target.value;
     if (!confirm(`Attribuer le rôle "${newRole}" à ${user.pseudo} ?`)) return;
     router.post(route('users.updateRole', user.id), {role: newRole}, {preserveScroll: true});
@@ -205,7 +177,7 @@ const toggleActivation = (user) => {
 
 /* ########## ANOMYSER UN USER #############################################################################*/
 const anonymizeUser = (user) => {
-    if (user.roles.some(r => r.name === 'Super-admin') || user.anonyme) return;
+    if ((user.is_super_admin) || (user.anonyme)) return;
     if (!confirm(`Voulez-vous anonymiser ${user.pseudo} ?`)) return;
     router.post(route('users.anonymize', user.id), {}, {preserveScroll: true});
 };
@@ -272,7 +244,7 @@ const seedUsers = () => {
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
 
 
-                    <!-- Titre principal avec icône -->
+                    <!--########## Titre principal avec icône ##########-->
                     <div class="bg-transparent border-2 border-[#ffb347] rounded-lg p-4 mb-6"
                          style="background-color: rgba(255, 179, 71, 0.05);">
                         <div class="flex items-center justify-center gap-3">
@@ -283,50 +255,47 @@ const seedUsers = () => {
                         </div>
                     </div>
 
-                    <!-- Bandeau d’accueil (toujours visible) -->
-                    <div class="mb-6 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4">
+                    <!--########## Bandeau d’accueil ##########-->
+                    <div class="mb-6 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4" role="region" aria-labelledby="admin-help-title">
                         <div class="flex items-start gap-3">
-                            <i class="fa-solid fa-circle-info mt-1 text-[#59c4b4]"></i>
+                            <i class="fa-solid fa-circle-info mt-1 text-[#59c4b4]" aria-hidden="true"></i>
                             <div>
-                                <p class="font-semibold text-gray-800">Bienvenue dans l’espace d’administration</p>
-                                <ul class="mt-2 text-sm text-gray-700 list-disc pl-5 space-y-1">
+                                <p id="admin-help-title" class="font-semibold text-gray-800">Bienvenue dans l’espace d’administration</p>
+
+                                <ul class="mt-2 text-sm text-gray-700 list-disc pl-5 space-y-1 leading-relaxed">
                                     <li>Utilisez les barres de recherche pour filtrer.</li>
-                                    <li>Cliquez sur un <span class="font-semibold">Pseudo</span> pour ouvrir le profil.</li>
-                                    <li>Cliquez sur les entêtes <span class="font-semibold">Pseudo / Nom / Email</span> pour trier.</li>
-                                    <li>Les boutons permettent d’activer/désactiver, anonymiser ou changer un rôle.</li>
-
-                                    <!-- Génération d’utilisateurs (réservé Super-admin) -->
-                                    <li v-if="isSuperAdmin()">
-                                        Générer 10 utilisateurs de test autant de fois que nécessaire
-                                        (réservé <span class="font-semibold">Super-admin</span>).
+                                    <li>Cliquez sur un <strong>Pseudo</strong> pour ouvrir le profil.</li>
+                                    <li>Cliquez sur les <strong>en-têtes</strong> <strong>Pseudo / Nom / Email</strong> pour trier.</li>
+                                    <li>
+                                        Les boutons permettent d’activer/désactiver
+                                        <template v-if="isSuperAdmin()">, anonymiser</template>
+                                        ou changer un rôle.
                                     </li>
 
-                                    <!-- NOUVEAU : export -->
-                                    <li>
-                                        Export CSV : utilisez les boutons “<span class="font-semibold">Exporter les utilisateurs</span>”
-                                        et “<span class="font-semibold">Exporter les événements</span>”.
-                                    </li>
-                                    <li>
-                                        Seul un <span class="font-semibold">Super-admin</span> peut attribuer le rôle « Super-admin ».
-                                    </li>
-                                    <li>
-                                        Pour <span class="font-semibold">anonymiser</span> ou <span class="font-semibold">désactiver</span> un <span class="font-semibold">Admin</span>,
-                                        un Super-admin doit d’abord le faire passer en « User ».
-                                    </li>
-                                    <li>
-                                        Personne ne peut <span class="font-semibold">s’auto-désactiver</span> ni s’<span class="font-semibold">auto-anonymiser</span>.
-                                    </li>
+                                    <!-- Bloc réservé Super-admin -->
+                                    <template v-if="isSuperAdmin()">
+                                        <li>Générez 10 utilisateurs de test autant de fois que nécessaire (réservé <strong>Super-admin</strong>).</li>
+                                        <li>Seul un <strong>Super-admin</strong> peut attribuer le rôle « Super-admin ».</li>
+                                        <li>Pour <strong>anonymiser</strong> ou <strong>désactiver</strong> un <strong>Admin</strong> ou un <strong>Super-admin</strong>, mettez d’abord son rôle sur « User ».</li>
+                                        <li>Personne ne peut <strong>s’auto-désactiver</strong> ni <strong>s’auto-anonymiser</strong>.</li>
+                                    </template>
+
+                                    <!-- Variante visible pour Admins -->
+                                    <template v-else>
+                                        <li>Personne ne peut <strong>s’auto-désactiver</strong>.</li>
+                                    </template>
                                 </ul>
                             </div>
                         </div>
                     </div>
 
 
+                    <!-- ================================================================== -->
                     <!-- Layout responsive : vertical sur mobile, horizontal sur desktop -->
-                    <!-- <div class="flex flex-col xl:flex-row gap-4 sm:gap-6">    || pivot - mettre côte à cote -->
+                    <!-- ================================================================== -->
                     <div class="flex flex-col gap-4 sm:gap-6">
 
-                        <!-- Section Utilisateurs -->
+                        <!--########## SECTION USERS ##########-->
                         <div class="xl:flex-1 bg-[#59c4b4]/10 p-4 rounded-lg shadow-md" style="min-height: 600px;">
                             <!-- Titre de section avec icône -->
                             <div class="bg-[#59c4b4] text-white rounded-lg p-3 mb-4 flex items-center gap-3">
@@ -334,7 +303,7 @@ const seedUsers = () => {
                                 <h2 class="text-lg font-semibold">Gestion des Utilisateurs</h2>
                             </div>
 
-                            <!-- Barre de recherche -->
+                            <!--########## BARRE DE RECHERCHE ##########-->
                             <div class="mb-4">
                                 <input
                                     v-model="searchUser"
@@ -344,7 +313,7 @@ const seedUsers = () => {
                                 />
                             </div>
 
-                            <!-- Bouton d'export -->
+                            <!--########## BOUTON EXPORT USERS ##########-->
                             <div class="mb-4">
                                 <a
                                     :href="route('admin.export.users')"
@@ -355,7 +324,7 @@ const seedUsers = () => {
                                 </a>
                             </div>
 
-                            <!-- Bouton utilisateurs tests -->
+                            <!--########## BOUTON SEED USERS TEST ##########-->
                             <button
                                 v-if="isSuperAdmin()"
                                 @click="seedUsers"
@@ -368,35 +337,46 @@ const seedUsers = () => {
                             <br><br>
 
 
-                            <!-- Table des utilisateurs -->
+                            <!--########## TABLEAU USERS ##########-->
                             <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
                                 <table class="min-w-full">
                                     <thead class="bg-gray-50">
                                     <tr>
+                                        <!-- title pseudo -->
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                                             @click="sortBy('pseudo')">
                                             Pseudo
                                             <i v-if="sortField === 'pseudo'"
                                                :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
                                         </th>
+
+                                        <!-- title nom -->
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                                             @click="sortBy('first_name')">
                                             Nom
                                             <i v-if="sortField === 'first_name'"
                                                :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
                                         </th>
+
+                                        <!-- title email -->
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                                             @click="sortBy('email')">
                                             Email
                                             <i v-if="sortField === 'email'"
                                                :class="sortAsc ? 'fa fa-sort-up' : 'fa fa-sort-down'" class="ml-1"></i>
                                         </th>
+
+                                        <!-- title statut -->
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Statut
                                         </th>
+
+                                        <!-- title role -->
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Rôle
                                         </th>
+
+                                        <!-- title action -->
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Actions
                                         </th>
@@ -407,6 +387,7 @@ const seedUsers = () => {
                                         :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
                                         class="hover:bg-blue-50 transition-colors">
 
+                                        <!-- value pseudo user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <Link
                                                 :href="route('users.show', user.id)"
@@ -416,14 +397,19 @@ const seedUsers = () => {
                                             </Link>
                                         </td>
 
+                                        <!-- value name + lastname user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <span v-html="highlight(user.first_name + ' ' + user.last_name, searchUser)"
                                                   class="text-gray-700"></span>
                                         </td>
+
+                                        <!-- value email user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <span v-html="highlight(user.email, searchUser)"
                                                   class="text-gray-700"></span>
                                         </td>
+
+                                        <!-- value staut user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
                                                 <span v-if="user.is_actif"
                                                       class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -437,36 +423,37 @@ const seedUsers = () => {
                                                 </span>
                                         </td>
 
-
+                                        <!-- value role user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <select
-                                                :value="user.roles[0]?.name || 'User'"
+                                                :value="user.role_name"
                                                 @change="updateRole(user, $event)"
-                                                :disabled="cannotEditRole(user)"
-                                                class="text-sm rounded-full px-3 py-1 font-medium border-0 focus:ring-2 focus:ring-[#59c4b4] transition-all"
-                                                :class="{
-                                                        'bg-red-100 text-red-800': user.roles[0]?.name === 'Super-admin',
-                                                        'bg-blue-100 text-blue-800': user.roles[0]?.name === 'Admin',
-                                                        'bg-green-100 text-green-800': user.roles[0]?.name === 'User',
-                                                        'opacity-50 cursor-not-allowed': cannotEditRole(user)
-                                                    }"
+                                                :disabled="user.cannot_edit_role"
+                                                class="text-sm rounded-full px-3 py-1 font-medium border-0 focus:ring-2 focus:ring-[#59c4b4]
+                                                 disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                                                                                        :class="{
+                                            'bg-red-100 text-red-800': user.is_super_admin,
+                                            'bg-blue-100 text-blue-800': !user.is_super_admin && user.role_name === 'Admin',
+                                            'bg-green-100 text-green-800': user.role_name === 'User'
+  }"
                                             >
                                                 <option value="User">User</option>
                                                 <option value="Admin">Admin</option>
                                                 <option value="Super-admin" v-if="isSuperAdmin()">Super-admin</option>
                                             </select>
+
                                         </td>
 
-
-
+                                        <!-- value action user -->
                                         <td class="px-4 py-3 whitespace-nowrap space-x-2">
+                                            <!-- Bouton active/désactive -->
                                             <button
                                                 @click="toggleActivation(user)"
                                                 :disabled="
                                                 user.id === nowConnectUserId || // NE PAS se désactiver soi-même
                                                 user.anonyme ||
-                                                user.roles.some(r => r.name === 'Super-admin') ||
-                                                user.roles.some(r => r.name === 'Admin')//pas touche aux Super-admins
+                                                user.roles.some(r => r.name === 'Super-admin') || //pas touche aux Super-admins
+                                                user.roles.some(r => r.name === 'Admin')//pas touche aux admins
   "
                                                 class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                                                 :class="user.is_actif
@@ -492,14 +479,13 @@ const seedUsers = () => {
                                             >
                                                 Anonymiser
                                             </button>
-
                                         </td>
                                     </tr>
                                     </tbody>
                                 </table>
                             </div>
 
-                            <!-- Pagination Utilisateurs -->
+                            <!--##########  PAGINATION USERS ########## -->
                             <div class="flex justify-center items-center mt-4 space-x-2">
                                 <template v-for="(link, index) in props.users.links" :key="index">
                                     <span
@@ -520,7 +506,7 @@ const seedUsers = () => {
                                 </template>
                             </div>
                         </div>
-                        <!-- Section Événements -->
+                        <!--########## SECTION EVENTS ##########-->
                         <div class="xl:flex-1 bg-[#59c4b4]/10 p-4 rounded-lg shadow-md" style="min-height: 600px;">
                             <!-- Titre de section avec icône -->
                             <div class="bg-[#59c4b4] text-white rounded-lg p-3 mb-4 flex items-center gap-3">
@@ -528,7 +514,7 @@ const seedUsers = () => {
                                 <h2 class="text-lg font-semibold">Gestion des Événements</h2>
                             </div>
 
-                            <!-- Barre de recherche événements -->
+                            <!--########## BARRE SEARCH EVENT ##########-->
                             <div class="mb-4">
                                 <input
                                     v-model="searchEvent"
@@ -538,7 +524,7 @@ const seedUsers = () => {
                                 />
                             </div>
 
-                            <!-- Bouton d'export Événements -->
+                            <!--########## BOUTON EXPORT EVENTS ##########-->
                             <div class="mb-4">
                                 <a
                                     :href="route('admin.export.events', { q: searchEvent })"
@@ -549,7 +535,7 @@ const seedUsers = () => {
                                 </a>
                             </div>
 
-                            <!-- Table des événements -->
+                            <!--########## TABLEAU DES EVENTS ##########-->
                             <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
                                 <table class="min-w-full">
                                     <thead class="bg-gray-50">
@@ -557,6 +543,11 @@ const seedUsers = () => {
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             #
                                         </th>
+
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Alert
+                                        </th>
+
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Nom
                                         </th>
@@ -584,6 +575,14 @@ const seedUsers = () => {
                                         <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {{ getEventGlobalIndex(index) }}
                                         </td>
+
+                                        <i class="fa-solid fa-bell"
+                                           :class="event.reports_count > 0 ? 'text-red-600' : 'text-gray-400'"></i>
+                                        <span v-if="event.reports_count" class="ml-1 text-xs font-semibold">
+  {{ event.reports_count }}
+</span>
+
+
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <span v-html="highlight(event.name_event, searchEvent)"
                                                   class="font-medium text-gray-900"></span>
@@ -663,7 +662,7 @@ const seedUsers = () => {
                                 </table>
                             </div>
 
-                            <!-- Pagination Événements -->
+                            <!--########## PAGINATION EVENTS ##########-->
                             <div class="flex justify-center items-center mt-4 space-x-2">
                                 <template v-for="(link, index) in props.events.links" :key="index">
                                     <span

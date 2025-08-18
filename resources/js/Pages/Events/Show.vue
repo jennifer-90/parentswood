@@ -116,6 +116,30 @@ const formatDate = (dateString) => {
         minute: '2-digit'
     })
 }
+
+const deactivateEvent = () => {
+    if (!confirm("Êtes-vous sûr de vouloir annuler cet événement ?")) return;
+
+    router.put(
+        route('events.deactivate', props.event.id),
+        {},
+        {
+            preserveScroll: true,
+            onSuccess: () => router.visit(route('events.index')),
+            onError: () => alert("❌ Impossible d'annuler l'événement."),
+        }
+    );
+};
+
+const cancelEvent = () => {
+    if (!confirm("Annuler cet événement ?")) return;
+    router.post(route('events.cancel', props.event.id), {}, {
+        onSuccess: () => router.visit(route('events.index'))
+    });
+};
+
+
+
 </script>
 
 <template>
@@ -371,14 +395,15 @@ const formatDate = (dateString) => {
                     </div>
 
                     <div class="flex flex-col sm:flex-row gap-3">
-                        <button
-                            v-if="canEditEvent"
-                            @click="deleteEvent"
-                            class="px-4 py-2.5 border border-red-300 text-red-600 font-medium rounded-lg hover:bg-red-50 transition-colors flex items-center justify-center"
-                        >
-                            <i class="fa-solid fa-trash-alt mr-2"></i>
+
+                        <button v-if="canEditEvent && !event.inactif"
+                                @click="cancelEvent"
+                                class="px-4 py-2.5 border border-red-300 text-red-600 ...">
+                            <i class="fa-solid fa-ban mr-2"></i>
                             Annuler l'événement
                         </button>
+
+
                     </div>
                 </div>
             </div>

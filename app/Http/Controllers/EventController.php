@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Event;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -150,20 +152,18 @@ class EventController extends Controller
 
     public function update(Request $request, Event $event)
     {
-        // Vérifie que seul le créateur ou un admin peut modifier
+        // Autorisation
         if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
             return response()->json(['message' => 'Action non autorisée.'], 403);
         }
 
         try {
-            // Validation des champs avec messages personnalisés
-            $validated = $request->validate([
-                'name_event' => 'required|string|max:255',
+            // Règles de base
+            $rules = [
+                'name_event'  => 'required|string|max:255',
                 'description' => 'nullable|string',
-                'date' => [
-                    'required',
-                    'date',
-                    'after_or_equal:today',
+                'date'        => [
+                    'required','date','after_or_equal:today',
                     function ($attribute, $value, $fail) {
                         $selectedDate = \Carbon\Carbon::parse($value);
                         $maxDate = now()->addYear();
@@ -172,91 +172,76 @@ class EventController extends Controller
                         }
                     },
                 ],
-                'hour' => 'required',
-                'location' => 'required|string|max:255',
-                'min_person' => 'required|integer|min:1',
-                'max_person' => 'required|integer|min:1|gt:min_person',
-                'picture_event' => [
-                    'nullable',
-                    'sometimes',
-                    'image',
-                    'mimes:jpeg,png,jpg',
-                    'max:2048', // 2MB
-                    function ($attribute, $value, $fail) {
-                        // Si c'est une chaîne, c'est probablement 'REMOVE_IMAGE'
-                        if (is_string($value) && $value === 'REMOVE_IMAGE') {
-                            return;
-                        }
-                        
-                        // Si c'est un objet UploadedFile, la validation standard s'appliquera
-                        if ($value instanceof \Illuminate\Http\UploadedFile) {
-                            return;
-                        }
-                        
-                        // Si on arrive ici, le format n'est pas valide
-                        return $fail('Le format du fichier image n\'est pas valide.');
-                    }
-                ],
-            ], [
-                'name_event.required' => 'Le nom de l\'événement est requis.',
-                'date.required' => 'La date est requise.',
-                'date.after_or_equal' => 'La date doit être aujourd\'hui ou une date ultérieure.',
-                'hour.required' => 'L\'heure est requise.',
-                'location.required' => 'Le lieu est requis.',
-                'min_person.required' => 'Le nombre minimum de participants est requis.',
-                'min_person.min' => 'Le nombre minimum de participants doit être d\'au moins 1.',
-                'max_person.required' => 'Le nombre maximum de participants est requis.',
-                'max_person.min' => 'Le nombre maximum de participants doit être d\'au moins 1.',
-                'max_person.gt' => 'Le nombre maximum de participants doit être supérieur au minimum.',
-            ]);
+                'hour'        => 'required',
+                'location'    => 'required|string|max:255',
+                'min_person'  => 'required|integer|min:1',
+                'max_person'  => 'required|integer|min:1|gt:min_person',
+                // picture_event → on ajoute la règle fichier UNIQUEMENT si un fichier est uploadé
+                'picture_event' => ['nullable'],
+            ];
 
-            // Gestion de l'image - Même logique que dans la méthode store
-            if ($request->has('picture_event') && $request->input('picture_event') === 'REMOVE_IMAGE') {
-                // Supprimer l'image existante
-                if ($event->image) {
-                    Storage::delete('public/' . $event->image);
-                }
-                $validated['image'] = null;
-            } elseif ($request->hasFile('picture_event')) {
-                // Supprimer l'ancienne image si elle existe
-                if ($event->image) {
-                    Storage::delete('public/' . $event->image);
-                }
-                
-                // Stocker la nouvelle image (même méthode que dans store)
-                $validated['image'] = $request->file('picture_event')->store('events', 'public');
-            } else {
-                // Conserver l'image existante si aucune nouvelle image n'est fournie
-                $validated['image'] = $event->image;
+            if ($request->hasFile('picture_event')) {
+                $rules['picture_event'] = ['image','mimes:jpeg,png,jpg','max:2048'];
             }
 
-            // Mise à jour de l'événement
+            $messages = [
+                'name_event.required' => 'Le nom de l\'événement est requis.',
+                'date.required'       => 'La date est requise.',
+                'date.after_or_equal' => 'La date doit être aujourd\'hui ou une date ultérieure.',
+                'hour.required'       => 'L\'heure est requise.',
+                'location.required'   => 'Le lieu est requis.',
+                'min_person.required' => 'Le nombre minimum de participants est requis.',
+                'min_person.min'      => 'Le nombre minimum de participants doit être d\'au moins 1.',
+                'max_person.required' => 'Le nombre maximum de participants est requis.',
+                'max_person.min'      => 'Le nombre maximum de participants est de 1 au minimum.',
+                'max_person.gt'       => 'Le nombre maximum de participants doit être supérieur au minimum.',
+                'picture_event.image' => 'Le fichier doit être une image.',
+                'picture_event.mimes' => 'L\'image doit être de type :jpeg, png, jpg.',
+                'picture_event.max'   => 'L\'image ne doit pas dépasser 2 Mo.',
+            ];
+
+            $validated = $request->validate($rules, $messages);
+
+            // Gestion de l'image
+            if ($request->input('picture_event') === 'REMOVE_IMAGE') {
+                // Supprimer l’ancienne si présente
+                if ($event->picture_event) {
+                    Storage::delete('public/'.$event->picture_event);
+                }
+                $validated['picture_event'] = null;
+            } elseif ($request->hasFile('picture_event')) {
+                // Remplacement par une nouvelle
+                if ($event->picture_event) {
+                    Storage::delete('public/'.$event->picture_event);
+                }
+                $validated['picture_event'] = $request->file('picture_event')->store('events', 'public');
+            } else {
+                // Ne pas toucher au champ si rien n'a changé
+                unset($validated['picture_event']);
+            }
+
             $event->update($validated);
 
-            // Retourner une réponse de succès simple
             return response()->json([
                 'success' => true,
                 'message' => 'L\'événement a été mis à jour avec succès.'
             ]);
-            
+
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // En cas d'erreur de validation, retourner les erreurs
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur de validation',
-                'errors' => $e->errors()
+                'errors'  => $e->errors()
             ], 422);
-            
         } catch (\Exception $e) {
-            // En cas d'autre erreur, la logger et retourner un message générique
-            \Log::error('Erreur lors de la mise à jour de l\'événement: ' . $e->getMessage());
+            \Log::error('Erreur lors de la mise à jour de l\'événement: '.$e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Une erreur est survenue lors de la mise à jour de l\'événement: ' . $e->getMessage(),
-                'error' => $e->getMessage()
+                'message' => 'Une erreur est survenue lors de la mise à jour de l\'événement.',
             ], 500);
         }
     }
+
 
 
 
@@ -278,10 +263,10 @@ class EventController extends Controller
     public function toggleParticipation(Event $event)
     {
         $user = auth()->user();
-        
+
         // Vérifier si l'utilisateur participe déjà à l'événement
         $isParticipating = $event->participants()->where('user_id', $user->id)->exists();
-        
+
         if ($isParticipating) {
             // Retirer l'utilisateur des participants
             $event->participants()->detach($user->id);
@@ -291,10 +276,10 @@ class EventController extends Controller
             $event->participants()->attach($user->id);
             $message = 'Participation enregistrée avec succès.';
         }
-        
+
         // Recharger les relations pour mettre à jour le compteur
         $event->load('participants');
-        
+
         return back()->with([
             'status' => $message,
             'event' => $event->fresh()
@@ -313,12 +298,12 @@ class EventController extends Controller
         if (!auth()->check()) {
             return redirect()->route('login');
         }
-        
+
         // Vérifier si l'événement est inactif et que l'utilisateur n'est ni admin ni créateur
         if ($event->inactif && !auth()->user()->hasAnyRole(['Admin', 'Super-admin']) && auth()->id() !== $event->created_by) {
             return redirect()->route('events.index')->with('error', 'Cet événement n\'est plus disponible.');
         }
-        
+
         $messages = Message::where('event_id', $event->id)
             ->with('user:id,pseudo')
             ->latest()
@@ -335,84 +320,50 @@ class EventController extends Controller
             'messages' => $messages,
         ]);
     }
-    
+
     /**
      * Désactive un événement au lieu de le supprimer
      *
      * @param  \App\Models\Event  $event
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function deactivate(Event $event)
+    public function deactivate(Request $request, Event $event): RedirectResponse|JsonResponse
     {
-        // Vérifie que seul le créateur ou un admin peut désactiver
+        // Créateur OU Admin/Super-admin
         if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Action non autorisée.'
-            ], 403);
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'message' => 'Action non autorisée.'], 403)
+                : back()->with('error', 'Action non autorisée.');
         }
 
-        try {
-            // Mettre à jour le statut de l'événement comme inactif
-            $event->update([
-                'inactif' => true,
-                'report' => 'Désactivé par l\'organisateur le ' . now()->format('d/m/Y à H:i')
-            ]);
-            
+        $event->update([
+            'inactif' => true,
+        ]);
+
+        // Si appel AJAX (axios/fetch) -> JSON. Sinon -> redirection + flash (Inertia).
+        if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'L\'événement a été désactivé avec succès et n\'est plus visible par les autres utilisateurs.'
+                'message' => "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs."
             ]);
-            
-        } catch (\Exception $e) {
-            \Log::error('Erreur lors de la désactivation de l\'événement: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Une erreur est survenue lors de la désactivation de l\'événement.'
-            ], 500);
         }
+
+        return redirect()->route('events.index')
+            ->with('success', "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs.");
     }
-    
-    /**
-     * Supprime un événement de la base de données.
-     *
-     * @param  \App\Models\Event  $event
-     * @return \Illuminate\Http\Response
-     */
+
+
+
     public function destroy(Event $event)
     {
-        // Vérifie que seul le créateur ou un admin peut supprimer
-        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Action non autorisée.'
-            ], 403);
-        }
-
-        try {
-            // Supprimer l'image associée si elle existe
-            if ($event->image) {
-                Storage::delete('public/' . $event->image);
-            }
-            
-            // Supprimer l'événement
-            $event->delete();
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'L\'événement a été supprimé avec succès.'
-            ]);
-            
-        } catch (\Exception $e) {
-            \Log::error('Erreur lors de la suppression de l\'événement: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Une erreur est survenue lors de la suppression de l\'événement.'
-            ], 500);
-        }
+        // Alias volontaire : “supprimer” = désactiver
+        return $this->deactivate($event);
     }
+
+
+
+
+
 
 
     /**
@@ -521,6 +472,32 @@ class EventController extends Controller
             }
             fclose($csv);
         }, $filename);
+    }
+
+
+    //Annuler event
+    public function cancel(Event $event)
+    {
+        // créateur OU admin/super-admin
+        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin','Super-admin'])) {
+            return back()->with('error', 'Action non autorisée.');
+        }
+
+        $event->update([
+            'inactif'      => true,
+            'cancel_note'  => 'Événement annulé le '.now()->format('d/m/Y à H:i'),
+            'cancelled_at' => now(),
+            'cancelled_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', "L'événement a été annulé.");
+    }
+
+//faire sonner la cloche)
+    public function report(Event $event)
+    {
+        $event->increment('reports_count'); // +1
+        return back()->with('success', 'Événement signalé. Merci !');
     }
 
 

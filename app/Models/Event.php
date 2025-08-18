@@ -20,11 +20,22 @@ class Event extends Model
         'max_person',
         'created_by',
         'inactif',
-        'report',
-        'picture_event',
         'confirmed',
         'validated_by_id',
         'validated_at',
+
+
+        'reports_count',
+
+        'confirmed',
+        'validated_by_id',
+        'validated_at',
+
+        'cancel_note',
+        'cancelled_at',
+        'cancelled_by',
+
+        'picture_event',
     ];
 
     public function creator()

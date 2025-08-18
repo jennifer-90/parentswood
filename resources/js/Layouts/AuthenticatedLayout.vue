@@ -184,8 +184,13 @@
             <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
                 <slot />
             </main>
+
+            <Footer />
         </div>
     </div>
+
+
+
 </template>
 
 <script setup>
@@ -196,6 +201,7 @@ import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
+import Footer from '@/Components/Footer.vue'
 
 const showingNavigationDropdown = ref(false);
 const page = usePage();

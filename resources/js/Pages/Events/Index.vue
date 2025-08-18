@@ -2,7 +2,18 @@
 import {Link, router} from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import villes from '@/data/villes_belges.json'
-import {defineProps, ref, watch} from 'vue'
+import {defineProps, ref, watch, computed } from 'vue'
+
+
+
+// --- Affichage "voir plus" des événements passés ---
+const showAllPast = ref(false)
+const displayedPastEvents = computed(() =>
+    showAllPast.value ? props.pastEvents : props.pastEvents.slice(0, 4)
+)
+const remainingPastCount = computed(() =>
+    Math.max((props.pastEvents?.length || 0) - 4, 0)
+)
 
 // Props du contrôleur
 const props = defineProps({
@@ -55,6 +66,27 @@ const resetFilters = () => {
                             <h1 class="text-2xl font-bold text-gray-800">Événements à venir</h1>
                         </div>
                     </div>
+
+                    <!-- Bandeau d’info permanent -->
+                    <div
+                        class="mb-6 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4"
+                        role="region"
+                        aria-labelledby="events-help-title"
+                    >
+                        <div class="flex items-start gap-3">
+                            <i class="fa-solid fa-circle-info mt-1 text-[#59c4b4]" aria-hidden="true"></i>
+                            <div>
+                                <p id="events-help-title" class="font-semibold text-gray-800">Comment utiliser cette page</p>
+                                <ul class="mt-2 text-sm text-gray-700 list-disc pl-5 space-y-1 leading-relaxed">
+                                    <li>Filtrez par <strong>Ville</strong>, <strong>Date</strong> ou <strong>Période</strong> pour affiner.</li>
+                                    <li>Cliquez un évènement pour voir les détails et/ou vous inscrire.</li>
+                                    <li>Créez le vôtre via <strong>“Créer un événement”</strong>.</li>
+                                    <li>Les <strong>événements passés</strong> sont en bas (4 visibles, puis “Voir la suite”).</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
 
                     <!-- Filtres -->
                     <div class="bg-[#59c4b4]/10 p-6 rounded-lg mb-12">
@@ -120,16 +152,41 @@ const resetFilters = () => {
                     </div>
 
                     <!-- Section Événements à venir -->
+
                     <div class="bg-[#59c4b4]/10 p-6 rounded-lg mb-12">
-                        <div class="flex items-center justify-between mb-6">
+
+
+
+
+                        <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
                             <div class="bg-[#59c4b4] text-white rounded-lg p-3 flex items-center gap-3">
                                 <i class="fa-solid fa-calendar-day"></i>
                                 <h2 class="text-lg font-semibold">Événements à venir</h2>
                             </div>
-                            <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">
-                                {{ upcomingEvents.total }} événement(s)
-                            </span>
+
+                            <div class="flex items-center gap-3">
+    <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">
+      {{ upcomingEvents.total }} événement(s)
+    </span>
+
+                                <!-- bouton Créer un événement -->
+                                <Link
+                                    :href="route('events.create')"
+                                    class="inline-flex items-center gap-2 bg-gradient-to-r from-[#ffb347] to-[#ff9500]
+             hover:from-[#ff9500] hover:to-[#e6850e] text-white px-4 py-2 rounded-lg
+             font-medium shadow-sm hover:shadow-md transition-all duration-300"
+                                    aria-label="Créer un événement"
+                                >
+                                    <i class="fa-solid fa-plus"></i>
+                                    Créer un événement
+                                </Link>
+                            </div>
                         </div>
+
+
+
+
+
 
                         <div v-if="upcomingEvents.data.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             <Link
@@ -267,6 +324,8 @@ const resetFilters = () => {
                         </div>
                     </div>
 
+
+
                     <!-- Section Événements passés -->
                     <div class="bg-[#59c4b4]/10 p-6 rounded-lg">
                         <div class="flex items-center justify-between mb-6">
@@ -275,17 +334,18 @@ const resetFilters = () => {
                                 <h2 class="text-lg font-semibold">Événements passés</h2>
                             </div>
                             <span class="bg-gray-100 text-gray-800 text-xs font-medium px-2.5 py-0.5 rounded">
-                                {{ pastEvents.length }} événement(s)
-                            </span>
+      {{ pastEvents.length }} événement(s)
+    </span>
                         </div>
 
                         <div v-if="pastEvents.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             <Link
-                                v-for="event in pastEvents"
+                                v-for="event in displayedPastEvents"
                                 :key="event.id"
                                 :href="route('events.show', event.id)"
                                 class="group bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 border border-gray-100 opacity-80 hover:opacity-100"
                             >
+                                <!-- carte identique à avant -->
                                 <div class="relative h-48 overflow-hidden">
                                     <img
                                         :src="event.picture_event ? '/storage/' + event.picture_event : defaultImage"
@@ -308,31 +368,58 @@ const resetFilters = () => {
                                 </div>
                                 <div class="p-4">
                                     <div class="flex items-center text-sm text-gray-500 mb-2">
-                                        <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
                                         {{ event.hour.slice(0, 5) }}
                                     </div>
                                     <div class="flex justify-between items-center">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                            {{ event.participants_count }} participants
-                                        </span>
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+            {{ event.participants_count }} participants
+          </span>
                                         <span class="text-sm font-medium text-gray-500 group-hover:text-[#59c4b4] group-hover:underline transition-colors">
-                                            Voir détails
-                                        </span>
+            Voir détails
+          </span>
                                     </div>
                                 </div>
                             </Link>
                         </div>
 
+                        <!-- Bouton Voir la suite -->
+                        <div v-if="!showAllPast && remainingPastCount > 0" class="mt-6 text-center">
+                            <button
+                                @click="showAllPast = true"
+                                class="inline-flex items-center gap-2 bg-gradient-to-r from-[#59c4b4] to-[#4db3a3]
+             hover:from-[#4db3a3] hover:to-[#3aa796] text-white px-4 py-2 rounded-lg
+             font-medium shadow-sm hover:shadow-md transition-all duration-300"
+                            >
+                                Voir la suite ({{ remainingPastCount }})
+                            </button>
+                        </div>
+
+                        <!-- Optionnel : bouton pour replier -->
+                        <div v-else-if="showAllPast && pastEvents.length > 4" class="mt-4 text-center">
+                            <button
+                                @click="showAllPast = false"
+                                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white
+             hover:bg-gray-50 text-gray-700 font-medium transition-all duration-300"
+                            >
+                                Voir moins
+                            </button>
+                        </div>
+
                         <div v-else class="text-center py-12 bg-white rounded-xl border-2 border-dashed border-gray-200">
-                            <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" class="h-12 w-12 mx-auto text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
                             <h3 class="mt-2 text-lg font-medium text-gray-900">Aucun événement passé</h3>
                             <p class="mt-1 text-sm text-gray-500">Aucun événement n'a encore eu lieu.</p>
                         </div>
                     </div>
+
+
+
+
                 </div>
             </div>
         </div>

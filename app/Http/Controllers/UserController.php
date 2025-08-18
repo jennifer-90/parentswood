@@ -23,6 +23,8 @@ class UserController extends Controller
             return back()->with('flash', ['error' => "Accès refusé."]);
         }
 
+        $me = auth()->user();
+
         $search = trim((string) $request->input('search'));        // filtre users
 
         // Bien charger les utilisateurs avec pagination 10 par page
@@ -41,7 +43,23 @@ class UserController extends Controller
             ->orderBy('anonyme', 'asc')     // 0 (non anonyme) d'abord, 1 (anonyme) ensuite
             ->orderBy('created_at', 'asc')
             ->paginate(10)
-            ->through(fn($user) => [
+            ->through(function ($user) use ($me) {
+
+                $isSelf = $user->id === $me->id;
+
+                //règle de “séniorité |e| Super-admin
+                $isTargetSuperAdmin = $user->roles->contains(fn($r) => $r->name === 'Super-admin');
+                $isOlderSuperAdmin  = $isTargetSuperAdmin && $user->created_at->lt($me->created_at);
+
+                if ($me->hasRole('Super-admin')) {
+                    $cannotEdit = $isSelf || $user->anonyme || $isOlderSuperAdmin;
+                } elseif ($me->hasRole('Admin')) {
+                    $cannotEdit = $isSelf || $user->anonyme || $isTargetSuperAdmin;
+                } else {
+                    $cannotEdit = true;
+                }
+
+            return [
                 'id' => $user->id,
                 'pseudo' => $user->pseudo,
                 'first_name' => $user->first_name,
@@ -53,9 +71,14 @@ class UserController extends Controller
                 'created_at' => $user->created_at,
                 'roles' => $user->roles->map(fn($role) => [
                     'id' => $role->id,
-                    'name' => $role->name,
-                ]),
-            ])
+                    'name' => $role->name]),
+
+                'role_name'         => optional($user->roles->first())->name ?? 'User',
+                'is_super_admin'    => $isTargetSuperAdmin,
+                'cannot_edit_role'  => $cannotEdit,
+                ];
+
+            })
             ->withQueryString();
 
 

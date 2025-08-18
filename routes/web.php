@@ -176,6 +176,13 @@ Route::middleware(['auth', 'superadmin' ])
     ->name('admin.seed.users');
 
 
+Route::post('/events/{event}/cancel', [EventController::class, 'cancel'])
+    ->name('events.cancel')->middleware('auth');
+
+Route::post('/events/{event}/report', [EventController::class, 'report'])
+    ->name('events.report')->middleware('auth');
+
+
 
 
 

@@ -33,14 +33,9 @@
 
     <body class="font-sans antialiased">
         @inertia
+
     </body>
 
-    <footer>
-        Coucou je suis le footer
-        <i class="fa-brands fa-x-twitter"></i>
-        <i class="fa-brands fa-facebook"></i>
-        <i class="fa-brands fa-tiktok"></i>
-        <i class="fa-brands fa-github"></i>
-    </footer>
+
 
 </html>

@@ -1,6 +1,7 @@
 <script setup>
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import Footer from "@/Components/Footer.vue";
 
 const page = usePage();
 const currentRoute = computed(() => page.url);
@@ -39,17 +40,6 @@ const currentRoute = computed(() => page.url);
                             class="text-sm font-medium transition-colors"
                         >
                             Accueil
-                        </Link>
-
-                        <Link
-                            href="/about"
-                            :class="{
-                                'text-teal-600 font-medium': currentRoute.startsWith('/about'),
-                                'text-gray-600 hover:text-teal-600': !currentRoute.startsWith('/about')
-                            }"
-                            class="text-sm font-medium transition-colors"
-                        >
-                            À propos
                         </Link>
 
                         <div class="flex space-x-4">
@@ -124,18 +114,6 @@ const currentRoute = computed(() => page.url);
                         Accueil
                     </Link>
 
-                    <Link
-                        href="/about"
-                        @click="showingMobileMenu = false"
-                        :class="{
-                            'bg-teal-50 text-teal-700': currentRoute.startsWith('/about'),
-                            'text-gray-700 hover:bg-gray-100': !currentRoute.startsWith('/about')
-                        }"
-                        class="block px-3 py-2 rounded-md text-base font-medium"
-                    >
-                        À propos
-                    </Link>
-
                     <div class="pt-4 border-t border-gray-200">
                         <Link
                             href="/login"
@@ -169,11 +147,14 @@ const currentRoute = computed(() => page.url);
         <main>
             <slot />
         </main>
+
+        <Footer />
     </div>
 </template>
 
 <script>
 import { ref } from 'vue';
+import Footer from '@/Components/Footer.vue'
 
 export default {
     setup() {
