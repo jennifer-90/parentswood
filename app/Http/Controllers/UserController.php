@@ -14,40 +14,50 @@ use Illuminate\Support\Facades\DB;
 class UserController extends Controller
 {
     /**
-     * Affiche le tableau d'administration : utilisateurs paginés + événements non paginés.
+     * Affiche le tableau d'administration : utilisateurs + événements paginés
      * Accessible uniquement aux Admins et Super-admins.
      */
     public function adminDashboard(Request $request)
     {
+        // Vérifie si l'utilisateur connecté a le rôle Admin ou Super-admin
         if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
             return back()->with('flash', ['error' => "Accès refusé."]);
         }
 
         $me = auth()->user();
 
-        $search = trim((string) $request->input('search'));        // filtre users
+        // SEARCH 
+        $searchUsers  = trim((string) $request->input('search_users'));  
+        $searchEvents = trim((string) $request->input('search_events')); 
 
-        // Bien charger les utilisateurs avec pagination 10 par page
+        /* ----------------------------------------------------------------
+        | SEARCH USERS : filtre sur TOUTE la base + pagination indépendante
+        | ---------------------------------------------------------------- */
+
         $users = User::with('roles:id,name')
             ->select('id', 'pseudo', 'first_name', 'last_name', 'email', 'last_login', 'is_actif', 'anonyme', 'created_at')
 
-            ->when($search, function ($q) use ($search) {
-                $q->where(function ($q) use ($search) {
-                    $q->where('pseudo', 'like', "%{$search}%")
-                        ->orWhere('first_name', 'like', "%{$search}%")
-                        ->orWhere('last_name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
+            // When ==> recherche sur toute la DB côté serveur (toutes les pages) avant la pagination
+            ->when($searchUsers, function ($q) use ($searchUsers) {
+                $q->where(function ($q) use ($searchUsers) {
+                    $q->where('pseudo', 'like', "%{$searchUsers}%")
+                        ->orWhere('first_name', 'like', "%{$searchUsers}%")
+                        ->orWhere('last_name', 'like', "%{$searchUsers}%")
+                        ->orWhere('email', 'like', "%{$searchUsers}%");
                 });
             })
 
             ->orderBy('anonyme', 'asc')     // 0 (non anonyme) d'abord, 1 (anonyme) ensuite
             ->orderBy('created_at', 'asc')
-            ->paginate(10)
-            ->through(function ($user) use ($me) {
 
+            ->paginate(10, ['*'], 'users_page') // << nom de page pour la liste Users
+
+            // On utilise `->through()` pour transformer les données des utilisateurs
+            // et ajouter des informations supplémentaires comme les rôles et les permissions
+            ->through(function ($user) use ($me) {
                 $isSelf = $user->id === $me->id;
 
-                //règle de “séniorité |e| Super-admin
+                //règle de séniorité |e| Super-admin en fonction de la date de création
                 $isTargetSuperAdmin = $user->roles->contains(fn($r) => $r->name === 'Super-admin');
                 $isOlderSuperAdmin  = $isTargetSuperAdmin && $user->created_at->lt($me->created_at);
 
@@ -79,26 +89,59 @@ class UserController extends Controller
                 ];
 
             })
-            ->withQueryString();
+            ->appends([
+            'search_users'  => $searchUsers,
+            'search_events' => $searchEvents,
+        ]);
 
 
+        /* ----------------------------------------------------------------
+        | EVENTS : filtre sur TOUTE la base + pagination indépendante
+        | ---------------------------------------------------------------- */
+
+        // On utilise `with()` pour charger les relations nécessaires
+        // et `select()` pour ne récupérer que les colonnes nécessaires
         $events = Event::with([
             'creator:id,pseudo',
             'validatedBy:id,pseudo',
             'cancelledBy:id,pseudo',
             ])
             ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at', 'inactif', 'confirmed', 'validated_by_id', 'validated_at',  'reports_count', 'cancelled_at','cancelled_by')
+            
+            // When ==> recherche sur toute la DB côté serveur (toutes les pages) avant la pagination
+             ->when($searchEvents, function ($q) use ($searchEvents) {
+            $q->where(function ($qq) use ($searchEvents) {
+                $qq->where('name_event', 'like', "%{$searchEvents}%")
+                   ->orWhere('location',  'like', "%{$searchEvents}%");
+            });
+        })
+
+
             ->orderBy('created_at', 'desc')
-            ->paginate(10)
-            ->withQueryString();
+            ->paginate(10, ['*'], 'events_page') // << nom de page pour la liste Events
+            
+             ->appends([
+            'search_users'  => $searchUsers,
+            'search_events' => $searchEvents,
+        ]);
 
 
         return Inertia::render('Admin/Index', [
             'users' => $users,
             'events' => $events,
+
+
+            // On passe les filtres de recherche pour les conserver dans l'URL
+            // et permettre de les réutiliser lors de la navigation
+           'filters' => [
+            'search_users'  => $searchUsers,
+            'search_events' => $searchEvents,
+        ],
+
             'userRole' => auth()->user()->roles->pluck('name'),
         ]);
     }
+
 
     /**
      * Affiche le profil d’un utilisateur connecté.

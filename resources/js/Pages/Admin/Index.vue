@@ -1,37 +1,93 @@
 <script setup>
 
-import {ref, computed} from 'vue';
+import {ref, computed, watch} from 'vue';
 import {router, usePage, Link, Head, useRemember} from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { watch } from 'vue';
 
 
 const route = window.route;
-const debounce = (fn, d=300) => {
-    let t;
-    return (...a)=>{
-        clearTimeout(t);
-        t=setTimeout(()=>fn(...a), d);
-    };
-};
 
-/****************************************************************/
-/*==============================================================*/
+
+/** Lance la recherche après +-300 ms sans frappe (évite une requête par lettre). */
+function debounce(action, delaiMs = 300) {
+    let timeout = null;
+    return function (...args) { // accepte tous les arguments(value)
+        clearTimeout(timeout);
+        timeout = setTimeout(function () {
+            action(...args); // transmet les argts tels quels
+        }, delaiMs);
+    };
+}
+
 /* -- PROPS: données envoyées par le contrôleur vers Inertia -- */
 const props = defineProps({
     users: Object,
     events: Object,
+    filters: Object,
 });
 /*==============================================================*/
 /****************************************************************/
 
+const inertiaNavOpts = { preserveState: true, replace: true, preserveScroll: true }; // Options communes pour Inertia
 
-const getUserGlobalIndex = (index) => {
-    return ((props.users.current_page - 1) * props.users.per_page) + index + 1;
+/**
+ * Aller vers une page Users donnée, en gardant les filtres
+ * et en REMETTANT les Events sur la page 1.
+ */
+const goToUsersPagination = (linkUrl) => {
+  // On lit le numéro de page dans l'URL générée par Laravel
+  const fullUrl = new URL(linkUrl, window.location.origin);
+  const nextUsersPage = Number(
+    fullUrl.searchParams.get('users_page') ?? fullUrl.searchParams.get('page') ?? '1'
+  );
+
+  router.get(
+    route('admin.index'),
+    {
+      // on renvoie toujours les 2 filtres pour ne pas les perdre
+      search_users:  searchUser.value,
+      search_events: searchEvent.value,
+
+      users_page:  nextUsersPage, // aller à cette page Users
+      events_page: 1,             // << on force Events à revenir en page 1
+    },
+    inertiaNavOpts
+  );
 };
-const getEventGlobalIndex = (index) => {
-    return ((props.events.current_page - 1) * props.events.per_page) + index + 1;
+
+/**
+ * Aller vers une page Events donnée, en gardant les filtres
+ * et en GARDANT la page Users actuelle (pas de reset).
+ */
+const goToEventsPagination = (linkUrl) => {
+  const fullUrl = new URL(linkUrl, window.location.origin);
+  const nextEventsPage = Number(
+    fullUrl.searchParams.get('events_page') ?? fullUrl.searchParams.get('page') ?? '1'
+  );
+
+  router.get(
+    route('admin.index'),
+    {
+      search_users:  searchUser.value,
+      search_events: searchEvent.value,
+
+      users_page:  props.users?.current_page ?? 1, // on garde la page Users affichée
+      events_page: nextEventsPage,                 // aller à cette page Events
+    },
+    inertiaNavOpts
+  );
 };
+
+
+
+
+
+const getUserGlobalIndex  = (i) => (props.users?.from  ?? 0) + i;
+const getEventGlobalIndex = (i) => (props.events?.from ?? 0) + i;
+
+
+
+
 
 /* ########## INFOS DU USER CONNECTE A L'HEURE ACTUELLE ##########################################################*/
 const page = usePage(); // donne accès à tout ce qu'Inertia expose (props, auth, etc.)
@@ -41,12 +97,10 @@ const nowConnectUserId = nowConnectUser.id;
 
 /* ########## TEXTE DYNAMIQUE POUR LE TITRE DE LA PAGE ADMIN ##################################################*/
 const adminTitle = computed(() => {
-    if (nowConnectUser.role === 'Super-admin') {
-        return 'Gestion Super Admin';
-    }
-    if (nowConnectUser.role === 'Admin') {
-        return 'Gestion Admin';
-    }
+  const role = nowConnectUser?.role;
+  if (role === 'Super-admin') return 'Gestion Super Admin';
+  if (role === 'Admin') return 'Gestion Admin';
+  return 'Espace d’administration';
 });
 
 
@@ -55,6 +109,7 @@ const isSuperAdmin = () => nowConnectUser.role === 'Super-admin'; //déclartion 
 
 const updateRole = (user, event) => {
     if (user.cannot_edit_role) return;
+
     const newRole = event.target.value;
     if (!confirm(`Attribuer le rôle "${newRole}" à ${user.pseudo} ?`)) return;
     router.post(route('users.updateRole', user.id), {role: newRole}, {preserveScroll: true});
@@ -85,22 +140,48 @@ const highlight = (text, search) => {
 };
 
 //searchUser persiste entre les pages/pagination (grâce à useRemember)
-const searchUser = useRemember(props.filters?.search ?? '', 'admin.users.search');
-const searchEvent = ref('');
+const searchUser = useRemember(props.filters?.search_users ?? '', 'admin.users.search');
+const searchEvent = useRemember(props.filters?.search_events ?? '', 'admin.events.search');
 
 
+// Recherche utilisateur : toutes les données de la db et non des données paginées
+// On utilise un debounce pour éviter les requêtes trop fréquentes
+// (évite les requêtes à chaque frappe de touche)
+// On utilise `watch` pour réagir aux changements de `searchUser`
 watch(
-    searchUser,
-    debounce((v) => {
-        router.get(
-            route('admin.index'),
-            { search: v },
-            {
-                preserveState: true,
-                replace: true,
-                preserveScroll: true  // ne remonte pas la page
-            });
-    }));
+  searchUser,
+  debounce((v) => {
+    router.get(
+      route('admin.index'),
+      {
+        search_users:  v,                               // on met à jour ce qu'on tape
+        search_events: searchEvent.value,               // on garde l'autre filtre
+        users_page:    1,                               // reset Users
+        events_page:   props.events?.current_page ?? 1, // on garde la page Events actuelle
+      },
+      inertiaNavOpts
+    );
+  }, 300)
+);
+
+
+//Recherche événement : toutes les données de la db et non des données paginées
+watch(
+  searchEvent,
+  debounce((v) => {
+    router.get(
+      route('admin.index'),
+      {
+        search_users:  searchUser.value,                // on garde l'autre filtre
+        search_events: v,                               // on met à jour ce qu'on tape
+        users_page:    props.users?.current_page ?? 1,  // on garde la page Users actuelle
+        events_page:   1,                               // reset Events
+      },
+      inertiaNavOpts
+    );
+  }, 300)
+);
+
 
 /* ########## TRIER/FILTRER LE TABLEAU USER ####################################################################*/
 
@@ -117,6 +198,7 @@ const sortBy = (field) => {
 };
 
 const sortedUsers = computed(() => {
+    if (!Array.isArray(props.users?.data)) return [];// Si pas de données, retourne un tableau vide
     const fieldName   = sortField.value; // colonne choisie (pseudo, email, ...)
     const isAscending = sortAsc.value;   // sens du tri
 
@@ -161,14 +243,15 @@ const filteredUsers = computed(() => {
 
 /* ########## TRIER/FILTRER LE TABLEAU EVENTS ###############################################################*/
 const prioritizedEvents = computed(() => {
+    if (!Array.isArray(props.events?.data)) return []; // Si pas de données, retourne un tableau vide
 
-    // terme tapé dans la barre de recherche
+    // tapé dans la barre de recherche
     const searchTerm = (searchEvent.value || '').trim().toLowerCase();
 
     // liste brute renvoyée par le backend (ou tableau vide si rien)
     const allEvents = Array.isArray(props.events?.data) ? props.events.data : [];
 
-    // 2 paniers : avec signalements / sans signalements
+    // 2 array avec signalements / sans signalements
     const reportedEvents = []; // cloche rouge (reports_count > 0)
     const regularEvents  = []; // cloche grise (0)
 
@@ -195,8 +278,6 @@ const prioritizedEvents = computed(() => {
     // d’abord les signalés, puis les autres
     return reportedEvents.concat(regularEvents);
 });
-
-
 
 
 /* ########## ACTIVER/DESACTIVER UN USER  ##################################################################*/
@@ -304,7 +385,7 @@ const clearEventReports = (event) => {
                         </div>
                     </div>
 
-                    <!--########## Bandeau d’accueil ##########-->
+                    <!--########## BANDEAU D'ACCUEIL ##########-->
                     <div class="mb-6 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4" role="region" aria-labelledby="admin-help-title">
                         <div class="flex items-start gap-3">
                             <i class="fa-solid fa-circle-info mt-1 text-[#59c4b4]" aria-hidden="true"></i>
@@ -365,7 +446,7 @@ const clearEventReports = (event) => {
                             <!--########## BOUTON EXPORT USERS ##########-->
                             <div class="mb-4">
                                 <a
-                                    :href="route('admin.export.users')"
+                                    :href="route('admin.export.users', { search_users: searchUser })"
                                     class="inline-flex items-center gap-2 bg-gradient-to-r from-[#ffb347] to-[#ff9500] hover:from-[#ff9500] hover:to-[#e6850e] text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
                                 >
                                     <i class="fa-solid fa-download"></i>
@@ -438,6 +519,7 @@ const clearEventReports = (event) => {
 
                                         <!-- value pseudo user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
+                                            <i class="fa-solid fa-user text-[#59c4b4]" aria-hidden="true"></i>&nbsp;
                                             <Link
                                                 :href="route('users.show', user.id)"
                                             class="font-medium text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -544,7 +626,7 @@ const clearEventReports = (event) => {
                                     />
                                     <button
                                         v-else
-                                        @click="router.get(link.url)"
+                                        @click="goToUsersPagination(link.url)"
                                         class="px-3 py-2 rounded-lg transition-all duration-300 hover:shadow-md"
                                         :class="{
                                             'bg-[#59c4b4] text-white font-bold shadow-md': link.active,
@@ -595,7 +677,8 @@ const clearEventReports = (event) => {
                             <!--########## BOUTON EXPORT EVENTS ##########-->
                             <div class="mb-4">
                                 <a
-                                    :href="route('admin.export.events', { q: searchEvent })"
+                                    :href="route('admin.export.events', { search_events: searchEvent })"
+
                                     class="inline-flex items-center gap-2 bg-gradient-to-r from-[#ffb347] to-[#ff9500] hover:from-[#ff9500] hover:to-[#e6850e] text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
                                 >
                                     <i class="fa-solid fa-download"></i>
@@ -621,8 +704,6 @@ const clearEventReports = (event) => {
                                             Nom
                                         </th>
 
-
-
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Lieu
                                         </th>
@@ -636,7 +717,6 @@ const clearEventReports = (event) => {
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Statut
                                         </th>
-
 
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Confirmation
@@ -681,10 +761,6 @@ const clearEventReports = (event) => {
                                             </div>
                                         </td>
 
-
-
-
-
                                         <td class="px-4 py-3 ">
                                             <Link
                                                 :href="route('events.show', event.id)"
@@ -695,47 +771,78 @@ const clearEventReports = (event) => {
                                         </td>
 
 
-
-
                                         <td class="px-4 py-3 ">
+                                            <i class="fa-solid fa-location-dot text-[#59c4b4] mr-2"></i>
+
                                             <span v-html="highlight(event.location, searchEvent)"
                                                   class="text-gray-700"></span>
                                         </td>
 
 
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                                            {{ new Date(event.date).toLocaleDateString('fr-BE') }}
-                                        </td>
+  <div class="flex items-center gap-2" :title="new Date(event.date).toLocaleString('fr-BE')">
+    <i class="fa-solid fa-calendar text-[#59c4b4]" aria-hidden="true"></i>
+    <span>{{ new Date(event.date).toLocaleDateString('fr-BE') }}</span>
 
-
-                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                                            <div>{{ event.creator?.pseudo ?? 'Inconnu' }}</div>
-
-                                            <div
-                                                v-if="event.cancelled_at"
-                                                class="mt-1 inline-block text-[11px] font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded"
-                                                :title="`le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'})}`"
-                                            >
-                                                a annulé
-                                            </div>
-                                        </td>
+  </div>
+</td>
 
 
 
+                                      <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+  <!-- Pseudo + icône -->
+  <div class="flex items-center gap-1.5">
+    <i class="fa-solid fa-user text-[#59c4b4]" aria-hidden="true"></i>
+    <!-- Option: lien vers le profil du créateur -->
 
+    <Link v-if="event.creator"
+          :href="route('users.show', event.creator.id)"
+          class="hover:underline">
+      {{ event.creator.pseudo }}
+    </Link>
 
-                                        <td class="px-4 py-3 whitespace-nowrap">
-  <span v-if="!event.inactif"
-        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-    <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
-    Actif
+  </div>
+
+  <!-- À la ligne : badge “a annulé” si l’événement est annulé -->
+  <span
+    v-if="event.cancelled_at"
+    class="mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700"
+    :title="`le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'})}`"
+  >
+    a annulé
   </span>
-                                            <span v-else
-                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-    <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
-    Inactif
-  </span>
-                                        </td>
+</td>
+
+
+
+
+
+
+                                       <td class="px-4 py-3 text-sm align-top">
+  <div class="flex flex-col gap-1">
+    <!-- Actif / Inactif -->
+    <span v-if="!event.inactif"
+          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+      <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
+      Actif
+    </span>
+    <span v-else
+          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+      <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
+      Inactif
+    </span>
+
+    <!-- Annulé -->
+    <span v-if="event.cancelled_at"
+          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200"
+          :title="`Annulé le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit', minute:'2-digit'})}`">
+      <span class="w-2 h-2 bg-red-500 rounded-full mr-1.5"></span>
+      Annulé
+    </span>
+  </div>
+</td>
+
+
 
 
                                         <td class="px-4 py-3 text-sm text-gray-700">
@@ -816,7 +923,7 @@ const clearEventReports = (event) => {
                                     />
                                     <button
                                         v-else
-                                        @click="router.get(link.url)"
+                                        @click="goToEventsPagination(link.url)"
                                         class="px-3 py-2 rounded-lg transition-all duration-300 hover:shadow-md"
                                         :class="{
                                             'bg-[#59c4b4] text-white font-bold shadow-md': link.active,
