@@ -2,24 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Message;
 use App\Models\Event;
+use App\Models\Message;
 use Illuminate\Http\Request;
 
 class MessageController extends Controller
 {
     public function store(Request $request, Event $event)
     {
-        $request->validate([
+        $data = $request->validate([
             'text' => 'required|string|max:1000',
         ]);
 
         Message::create([
-            'user_id' => auth()->id(),
             'event_id' => $event->id,
-            'text' => $request->text,
+            'user_id'  => auth()->id(),
+            'text'     => $data['text'],
         ]);
 
-        return back();
+        return back()->with('success', 'Message ajouté');
     }
 }

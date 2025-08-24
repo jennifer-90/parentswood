@@ -1,169 +1,124 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, toRefs } from 'vue'
 import { usePage, router, Link } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Head } from '@inertiajs/vue3'
-
 
 const props = defineProps({
     event: Object,
     messages: Array,
     already_reported: Boolean,
-});
+})
 
+const { event, messages, already_reported } = toRefs(props)
+const alreadyReported = ref(!!already_reported.value)
 
+// Affichages
+const centres = computed(() =>
+    event.value?.centres_interet ?? event.value?.centresInteret ?? []
+)
 
 const page = usePage()
 const currentUser = page.props.auth.user
 const newMessage = ref('')
 
-// Vérifications des rôles et permissions
+// Permissions
 const userIsAdmin = computed(() =>
-    currentUser?.roles?.some(role => ['Admin', 'Super-admin'].includes(role.name)) ?? false
+    currentUser?.roles?.some(r => ['Admin', 'Super-admin'].includes(r.name)) ?? false
 )
-
 const isParticipating = computed(() =>
-    props.event.participants?.some(p => p.id === currentUser?.id) ?? false
+    event.value?.participants?.some(p => p.id === currentUser?.id) ?? false
 )
-
 const canEditEvent = computed(() =>
-    props.event?.created_by === currentUser?.id || userIsAdmin.value
+    event.value?.created_by === currentUser?.id || userIsAdmin.value
 )
 
-// Gestion de la participation
+// Participation (pas d’optimisme, on recharge)
 const toggleParticipation = () => {
-    if (!currentUser) {
-        router.visit(route('login'))
-        return
-    }
-
-    // Créez une copie locale de l'événement pour la réactivité
-    const updatedEvent = { ...props.event }
-    const isCurrentlyParticipating = isParticipating.value
-
-    // Mettez à jour l'interface utilisateur immédiatement
-    if (isCurrentlyParticipating) {
-        // Retirer de la liste des participants
-        updatedEvent.participants = updatedEvent.participants?.filter(
-            p => p.id !== currentUser.id
-        ) || []
-    } else {
-        // Ajouter à la liste des participants
-        if (!updatedEvent.participants) {
-            updatedEvent.participants = []
-        }
-        updatedEvent.participants = [...updatedEvent.participants, currentUser]
-    }
-
-    // Mettre à jour la référence de l'événement
-    Object.assign(props.event, updatedEvent)
-
-    // Envoyer la requête au serveur
+    if (!currentUser) { router.visit(route('login')); return }
     router.post(
-        route('events.toggleParticipation', { event: props.event.id }),
+        route('events.toggleParticipation', { event: event.value.id }),
         {},
         {
             preserveScroll: true,
-            onError: () => {
-                // En cas d'erreur, remettre l'état précédent
-                alert("❌ Une erreur est survenue lors de la mise à jour de votre participation.")
-                router.reload({ only: ['event'] })
-            }
+            onSuccess: () => router.reload({ only: ['event'] }),
+            onError: () => alert('❌ Erreur lors de la mise à jour de votre participation.'),
         }
     )
 }
 
-// Gestion des commentaires
+// Commentaires (CORRIGÉ: event.value.id)
 const postComment = () => {
     if (!newMessage.value.trim()) return
-    if (!currentUser) {
-        router.visit(route('login'))
-        return
-    }
+    if (!currentUser) { router.visit(route('login')); return }
 
     router.post(
-        route('messages.store', { event: props.event.id }),
+        route('events.messages.store', { event: event.value.id }),
         { text: newMessage.value },
         {
             preserveScroll: true,
             onSuccess: () => {
                 newMessage.value = ''
-                // Recharger les messages après l'ajout
                 router.reload({ only: ['messages'] })
             },
-            onError: () => {
-                alert("❌ Une erreur est survenue lors de l'envoi du commentaire.")
-            }
+            onError: () => alert("❌ Erreur lors de l'envoi du commentaire."),
         }
     )
 }
 
-// Suppression d'un événement
+// Suppression
 const deleteEvent = () => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet événement ? Cette action est irréversible.')) {
-        router.delete(route('events.destroy', props.event.id), {
-            onSuccess: () => {
-                // Rediriger vers la liste des événements après la suppression
-                router.visit(route('events.index'))
-            }
-        })
-    }
-}
-
-// Formatage des dates
-const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('fr-BE', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) return
+    router.delete(route('events.destroy', event.value.id), {
+        onSuccess: () => router.visit(route('events.index')),
     })
 }
 
-const deactivateEvent = () => {
-    if (!confirm("Êtes-vous sûr de vouloir annuler cet événement ?")) return;
+// Dates
+const formatDate = (input) => {
+    const s = typeof input === 'string' ? input.replace(' ', 'T') : input
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleString('fr-BE', {
+        day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    })
+}
 
+// Désactivation
+const deactivateEvent = () => {
+    if (!confirm("Êtes-vous sûr de vouloir annuler cet événement ?")) return
     router.put(
-        route('events.deactivate', props.event.id),
+        route('events.deactivate', event.value.id),
         {},
         {
             preserveScroll: true,
             onSuccess: () => router.visit(route('events.index')),
             onError: () => alert("❌ Impossible d'annuler l'événement."),
         }
-    );
-};
+    )
+}
 
-// Show.vue (script setup)
+// Annulation créateur
 const canCancelEvent = computed(() =>
-    currentUser?.id === props.event.created_by && !props.event.cancelled_at
-);
-
+    currentUser?.id === event.value?.created_by && !event.value?.cancelled_at
+)
 const cancelEvent = () => {
-    if (!confirm("Annuler cet événement ? Cette action est définitive.")) return;
-    router.post(route('events.cancel', props.event.id), {}, {
-        onSuccess: () => router.visit(route('events.index'))
-    });
-};
+    if (!confirm('Annuler cet événement ? Cette action est définitive.')) return
+    router.post(route('events.cancel', event.value.id), {}, {
+        onSuccess: () => router.visit(route('events.index')),
+    })
+}
 
-
-
-
-const alreadyReported = ref(!!props.already_reported);
-
+// Signalement
 const reportEvent = () => {
-    if (!currentUser) { router.visit(route('login')); return; }
-    router.post(route('events.report', props.event.id), {}, {
+    if (!currentUser) { router.visit(route('login')); return }
+    router.post(route('events.report', event.value.id), {}, {
         preserveScroll: true,
-        onSuccess: () => { alreadyReported.value = true; }
-    });
-};
-
-
-
-
+        onSuccess: () => { alreadyReported.value = true },
+    })
+}
 </script>
+
 
 <template>
     <Head :title="event.name_event" />
@@ -187,7 +142,7 @@ const reportEvent = () => {
                                     <span>{{ event.location }}</span>
                                     <span class="mx-3">•</span>
                                     <i class="fa-regular fa-calendar-days mr-2"></i>
-                                    <span>{{ formatDate(event.date + ' ' + event.hour) }}</span>
+                                    <span>{{ formatDate(`${event.date}T${event.hour}`) }}</span>
                                 </div>
                             </div>
                         </div>
@@ -206,6 +161,34 @@ const reportEvent = () => {
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <!-- Colonne de gauche - Détails -->
                     <div class="lg:col-span-2 space-y-6">
+
+
+                        <!-- Centres d’intérêt -->
+                        <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                            <div class="p-6">
+                                <div class="flex items-center mb-4">
+                                    <div class="bg-[#59c4b4] text-white p-2 rounded-lg">
+                                        <i class="fa-solid fa-star text-xl"></i>
+                                    </div>
+                                    <h2 class="ml-3 text-xl font-bold text-gray-800">Centres d'intérêt</h2>
+                                </div>
+
+                                <div v-if="centres && centres.length" class="flex flex-wrap gap-2">
+      <span
+          v-for="ci in centres"
+          :key="ci.id"
+          class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
+               bg-[#59c4b4]/10 text-[#59c4b4] border border-[#59c4b4]/20"
+      >
+        {{ ci.name }}
+      </span>
+                                </div>
+                                <p v-else class="text-gray-500 italic">Aucun centre d'intérêt renseigné.</p>
+                            </div>
+                        </div>
+
+
+
                         <!-- Section Description -->
                         <div class="bg-white rounded-xl shadow-md overflow-hidden">
                             <div class="p-6">
@@ -236,17 +219,15 @@ const reportEvent = () => {
                                                 <p class="text-sm text-gray-500">Organisateur</p>
 
 
-                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                                                    <Link
-                                                        v-if="event.creator"
-                                                        :href="route('users.show', event.creator.id)"
-                                                        class="text-blue-600 hover:underline"
-                                                    >
+
+
+
+                                                <div class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                                                    <Link v-if="event.creator" :href="route('users.show', event.creator.id)" class="text-blue-600 hover:underline">
                                                         {{ event.creator.pseudo }}
                                                     </Link>
                                                     <span v-else>Inconnu</span>
 
-                                                    <!-- Badge "a annulé" si l'event est annulé par le créateur -->
                                                     <span
                                                         v-if="event.cancelled_at && event.cancelled_by === event.created_by"
                                                         class="ml-2 inline-flex items-center text-[12px] font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded"
@@ -254,7 +235,8 @@ const reportEvent = () => {
                                                     >
     a annulé
   </span>
-                                                </td>
+                                                </div>
+
 
 
 
@@ -388,29 +370,38 @@ const reportEvent = () => {
                             <!-- Formulaire de commentaire -->
                             <div class="p-4 border-t border-gray-100">
                                 <div class="relative">
-                    <textarea
-                        v-model="newMessage"
-                        rows="3"
-                        placeholder="Écrire un commentaire..."
-                        class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200 resize-none"
-                        @keydown.enter.exclusive.prevent="postComment"
-                    ></textarea>
+                                    <textarea
+                                        v-model="newMessage"
+                                        rows="3"
+                                        placeholder="Écrire un commentaire..."
+                                        class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200 resize-none"
+                                        @keydown.enter.exact.prevent="postComment"
+                                        @keydown.shift.enter.stop
+                                    ></textarea>
+
+
+
                                     <button
+                                        type="button"
                                         @click="postComment"
                                         :disabled="!newMessage.trim()"
                                         :class="{
-                            'bg-[#59c4b4] hover:bg-[#4db3a3]': newMessage.trim(),
-                            'bg-gray-200 cursor-not-allowed': !newMessage.trim()
-                        }"
+        'bg-[#59c4b4] hover:bg-[#4db3a3]': newMessage.trim(),
+        'bg-gray-200 cursor-not-allowed': !newMessage.trim()
+      }"
                                         class="absolute right-3 bottom-3 p-2 text-white rounded-lg transition-colors duration-200"
                                     >
                                         <i class="fa-solid fa-paper-plane"></i>
                                     </button>
                                 </div>
                                 <p class="mt-2 text-xs text-gray-500 text-center">
-                                    Appuyez sur Entrée pour envoyer
+                                    Entrée pour envoyer — Shift+Entrée pour une nouvelle ligne
                                 </p>
                             </div>
+
+
+
+
                         </div>
                     </div>
                 </div>

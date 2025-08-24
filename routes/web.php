@@ -12,50 +12,75 @@ use App\Http\Controllers\EventController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ProfileController;
-
-// ========================================================================
-// Pages|Routes - publiques
-// ========================================================================
-
-// #################### Page d'accueil (invités uniquement) ####################
 use App\Models\Event;
 use Carbon\Carbon;
 
+// ========================================================================
+// ZONE PUBLIQUE (accessible à tous)
+// ========================================================================
+
+// Page d’accueil (redirige vers dashboard si déjà connecté)
 Route::get('/', function () {
     if (Auth::check()) {
         return redirect()->route('dashboard');
     }
 
-    // Récupérer les événements à venir
-    $events = Event::where('inactif', 0)
-        ->where('date', '>=', Carbon::now())
+    $today   = now()->toDateString();   // "YYYY-MM-DD"
+    $nowTime = now()->format('H:i');    // "HH:MM"  << IMPORTANT si ta colonne hour est "HH:MM"
+
+    $events = Event::query()
+        ->where('inactif', false)
+        ->where(function ($q) use ($today, $nowTime) {
+            $q->whereDate('date', '>', $today)
+                ->orWhere(function ($q) use ($today, $nowTime) {
+                    $q->whereDate('date', $today)
+                        ->where('hour', '>=', $nowTime); // compare "HH:MM" avec "HH:MM"
+                });
+        })
+        ->select(['id', 'name_event', 'date', 'hour', 'location', 'description'])
+        ->withCount('participants')       // -> participants_count
         ->orderBy('date', 'asc')
-        ->take(6) // afficher que 6évents
+        ->orderBy('hour', 'asc')
+        ->limit(6)
         ->get()
-        ->map(function($event) {
+        ->map(function ($event) {
+            // Normaliser en ISO pour le JS (Safari-safe)
+            // date -> "YYYY-MM-DD"
+            $date = $event->date instanceof \Carbon\Carbon
+                ? $event->date->format('Y-m-d')
+                : (string) $event->date;
+
+            // hour -> "HH:MM" -> on ajoute ":00" pour avoir "HH:MM:SS"
+            $hour = trim((string) $event->hour);
+            if ($hour && strlen($hour) === 5) {
+                $hour .= ':00';
+            }
+            // ISO final: "YYYY-MM-DDTHH:MM:SS"
+            $isoStart = ($date && $hour) ? "{$date}T{$hour}" : null;
+
             return [
-                'id' => $event->id,
-                'title' => $event->name_event,
-                'start_date' => $event->date . ' ' . $event->hour,
-                'location' => $event->location,
-                'participants_count' => $event->participants()->count(),
-                'description' => $event->description
+                'id'                 => $event->id,
+                'title'              => $event->name_event,
+                'start_date'         => $isoStart, // <- clé conservée, format ISO
+                'location'           => $event->location,
+                'participants_count' => $event->participants_count,
             ];
         });
 
     return Inertia::render('Home/HomePage', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
+        'canLogin'       => Route::has('login'),
+        'canRegister'    => Route::has('register'),
         'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-        'events' => $events  // Ajoutez cette ligne
+        'phpVersion'     => PHP_VERSION,
+        'events'         => $events,
     ]);
 })->name('home');
 
 
-// Vérification pseudo
+
+// Vérification de disponibilité d’un pseudo (AJAX public)
 Route::get('/check-pseudo/{pseudo}', function ($pseudo) {
-    $available = !User::where('pseudo', $pseudo)->exists();
+    $available = ! User::where('pseudo', $pseudo)->exists();
     return response()->json(['available' => $available]);
 })->name('pseudo.check');
 
@@ -65,148 +90,112 @@ require __DIR__.'/auth.php';
 
 
 // ===========================================================================
-// Routes invitées (guest)
+// ZONE INVITES (guest uniquement)
+// ==> Pages d'auth lorsqu'on n'est pas connecté
 // ===========================================================================
 
 Route::middleware('guest')->group(function () {
-    // Formulaire de connexion
-    Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
+    // Connexion
+    Route::get('/login',  [AuthenticatedSessionController::class, 'create'])->name('login');
     Route::post('/login', [AuthenticatedSessionController::class, 'store']);
 
-    // Formulaire d'inscription
-    Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
+    // Inscription
+    Route::get('/register',  [RegisteredUserController::class, 'create'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store']);
 });
 
 // ================================================================================
-// Routes authentifiées (auth)
+// ZONE AUTHENTIFIEE + ACTIVE
+// ==> Accessible uniquement si connecté et compte actif
 // ================================================================================
-Route::middleware(['auth'])->group(function () {
 
-    // Tableau de bord
+Route::middleware(['auth', 'active'])->group(function () {
+
+    // Déconnexion (POST)
+    Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-    // Profil utilisateur : affichage, mise à jour, suppression
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy'); /* a revoir pour anonymiser*/
-    Route::patch('/pseudo', [ProfileController::class, 'updatePseudo'])->name('profile.updatePseudo');
-    Route::patch('/password', [ProfileController::class, 'updatePassword'])->name('profile.updatePassword');
+    //Profil (mon compte)
+    Route::get('/profile',          [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile',        [ProfileController::class, 'update'])->name('profile.update');
+    Route::patch('/pseudo',         [ProfileController::class, 'updatePseudo'])->name('profile.updatePseudo');
+    Route::patch('/password',       [ProfileController::class, 'updatePassword'])->name('profile.updatePassword');
+    Route::delete('/profile',       [ProfileController::class, 'destroy'])->name('profile.destroy'); // A REVOIR| chanbger en desative
 
-
-
-    // Profil d'un utilisateur- voir un profil d'un autre user
+    //Profils publics (des autres)
     Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
 
-    // Events
-    Route::middleware(['auth'])->group(function () {
-        Route::get('/events', [EventController::class, 'index'])->name('events.index');
-        Route::get('/events/create', [EventController::class, 'create'])->name('events.create');
-        Route::post('/events', [EventController::class, 'store'])->name('events.store');
-        Route::get('/events/{event}', [EventController::class, 'show'])->name('events.show');
-        // Édition d'un événement
-        Route::get('/events/{event}/edit', [EventController::class, 'edit'])->name('events.edit');
-        Route::put('/events/{event}', [EventController::class, 'update'])->name('events.update');
-        // Commentaires sur les événements
-        Route::post('/events/{event}/messages', [MessageController::class, 'store'])->name('messages.store');
-        // -- Rejoindre un événement
-        Route::post('/events/{event}/join', [EventController::class, 'join'])->name('events.join');
-        // -- Basculer la participation
-        Route::post('/events/{event}/toggle-participation', [EventController::class, 'toggleParticipation'])->name('events.toggleParticipation');
+    //Events — zone utilisateur
+    Route::prefix('events')->name('events.')->group(function () {
+        // Listing / Création / Détail
+        Route::get('/',          [EventController::class, 'index'])->name('index');
+        Route::get('/create',    [EventController::class, 'create'])->name('create');
+        Route::post('/',         [EventController::class, 'store'])->name('store');
 
-        // -- Désactiver un événement
-        Route::put('/events/{event}/deactivate', [EventController::class, 'deactivate'])->name('events.deactivate');
+        Route::get('/{event}',   [EventController::class, 'show'])->name('show');
+
+        // Edition / Mise à jour
+        Route::get('/{event}/edit', [EventController::class, 'edit'])->name('edit');
+        Route::put('/{event}',      [EventController::class, 'update'])->name('update');
+
+        // Commentaires (sur un event)
+        Route::post('/{event}/messages', [MessageController::class, 'store'])->name('messages.store');
+
+        // Rejoindre / toggle participation
+        Route::post('/{event}/join',                 [EventController::class, 'join'])->name('join');
+        Route::post('/{event}/toggle-participation', [EventController::class, 'toggleParticipation'])->name('toggleParticipation');
+
+        // Désactiver son propre event (si autorisé par le contrôleur)
+        Route::put('/{event}/deactivate', [EventController::class, 'deactivate'])->name('deactivate');
+
+        // Annuler un event (créateur uniquement — logique dans le contrôleur)
+        Route::post('/{event}/cancel', [EventController::class, 'cancel'])->name('cancel');
+
+        // Signaler un event (1x par user/session — logique côté contrôleur)
+        Route::post('/{event}/report', [EventController::class, 'report'])->name('report');
     });
-
-});
-
-
-//Route::post('/events', [EventController::class, 'store'])->name('events.store');
-//Route::post('/events/{event}/toggle-participation', [EventController::class, 'toggleParticipation'])->name('events.toggleParticipation');
-//Route::get('/events/{event}', [EventController::class, 'show'])->name('events.show');
+}); //### - Fin du middleware : auth + active ***
 
 
-// ======================================================================================
-// Section Administration (Utilisateurs + Événements)
-// ======================================================================================
+// ======================
+// ZONE ADMIN (Admin + Super-admin autorisés)
+// ======================
+Route::middleware(['auth', 'active', 'admin'])->group(function () {
 
-//users
-Route::middleware(['auth'])->group(function () {
-
-    Route::post('/users/{user}/toggle-activation', [UserController::class, 'toggleActivation'])->name('users.toggleActivation');
-    Route::post('/users/{user}/update-role', [UserController::class, 'updateRole'])->name('users.updateRole');
-});
-
-// Anonymisation d'un utilisateur (Super-admin uniquement)
-Route::middleware(['auth', 'superadmin'])->post('/users/{user}/anonymize', [UserController::class, 'anonymize'])->name('users.anonymize');
-
-
-Route::middleware(['auth'])->group(function () {
+    // Tableau de bord d’admin
     Route::get('/admin', [UserController::class, 'adminDashboard'])->name('admin.index');
-});
 
-//events
-Route::middleware(['auth'])->group(function () {
-    Route::post('/events/{event}/toggle-active', [EventController::class, 'toggleActive'])->name('events.toggleActive');
-});
+    // Bouton active/désactive && changement de role users
+    Route::post('/users/{user}/toggle-activation', [UserController::class, 'toggleActivation'])->name('users.toggleActivation');
+    Route::post('/users/{user}/update-role',       [UserController::class, 'updateRole'])->name('users.updateRole');
 
-Route::middleware(['auth'])->group(function () {
-    Route::post('/events/{event}/accept', [EventController::class, 'accept'])->name('events.accept');
-    Route::post('/events/{event}/refuse', [EventController::class, 'refuse'])->name('events.refuse');
-});
-
-Route::middleware(['auth'])->group(function () {
-    Route::get('/admin/export/users', [UserController::class, 'exportUsers'])->name('admin.export.users');
+    // Exports CSV
+    Route::get('/admin/export/users',  [UserController::class, 'exportUsers'])->name('admin.export.users');
     Route::get('/admin/export/events', [EventController::class, 'exportEvents'])->name('admin.export.events');
-});
 
-Route::middleware(['auth'])->group(function () {
-    // Formulaire d’édition
-    Route::get('/events/{event}/edit', [EventController::class, 'edit'])->name('events.edit');
+    //Gestion events
+    Route::post('/events/{event}/toggle-active', [EventController::class, 'toggleActive'])->name('events.toggleActive');
+    Route::post('/events/{event}/accept',        [EventController::class, 'accept'])->name('events.accept');
+    Route::post('/events/{event}/refuse',        [EventController::class, 'refuse'])->name('events.refuse');
 
+    // Réinitialiser le compteur de signalements
+    Route::post('/events/{event}/reports/clear', [EventController::class, 'clearReports'])->name('events.reports.clear');
 
-    //Route::post('/events/{event}', [EventController::class, 'update'])->name('events.update');
-});
-
-
-
-
-Route::middleware(['auth', 'superadmin' ])
-->post('/admin/seed/users', [UserController::class, 'seedUsers'])
-    ->name('admin.seed.users');
+}); //### - Fin du middleware : auth + active + admin ***
 
 
-Route::middleware('auth')->group(function () {
-    // Annulation par le créateur UNIQUEMENT
-    Route::post('/events/{event}/cancel', [EventController::class, 'cancel'])
-        ->name('events.cancel');
+// ================================================================================
+//ZONE SUPER-ADMIN
+// ==> Nécessite auth + active + superadmin
+// anonymisation + seed
+// ================================================================================
 
-    // Activation/Désactivation par Admin/Super-admin (dashboard)
-    Route::post('/events/{event}/toggle-active', [EventController::class, 'toggleActive'])
-        ->name('events.toggleActive');
-});
-
-
-
-Route::post('/events/{event}/report', [EventController::class, 'report'])
-    ->name('events.report')->middleware('auth');
-
-
-
-// routes/web.php
-Route::middleware('auth')->group(function () {
-    // Signaler un event (incrémente reports_count une seule fois par session/user)
-    Route::post('/events/{event}/report', [EventController::class, 'report'])
-        ->name('events.report');
-
-    // (Optionnel) bouton admin pour remettre à zéro le compteur
-    Route::post('/events/{event}/reports/clear', [EventController::class, 'clearReports'])
-        ->name('events.reports.clear');
-});
-
-
-
-
+Route::middleware(['auth', 'active', 'superadmin'])->group(function () {
+    Route::post('/users/{user}/anonymize', [UserController::class, 'anonymize'])->name('users.anonymize');
+    Route::post('/admin/seed/users',       [UserController::class, 'seedUsers'])->name('admin.seed.users');
+});//### - Fin du middleware : auth + active + superadmin ***
 
 
 

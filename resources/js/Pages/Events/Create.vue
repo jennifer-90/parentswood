@@ -1,8 +1,29 @@
 <script setup>
-import { ref } from 'vue'
-import { useForm } from '@inertiajs/vue3'
+import { ref, computed } from 'vue'
+import { useForm, Head } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import villesData from '@/data/villes_belges.json'
+
+const props = defineProps({ interets: Array })
+
+// Formulaire
+const form = useForm({
+    name_event: '',
+    description: '',
+    date: '',
+    hour: '',
+    location: '',
+    min_person: 1,
+    max_person: '',
+    picture_event: null,
+    centres_interet: [],
+})
+
+const MAX_CI = 5
+const selectedInteretCount = computed(() => form.centres_interet.length)
+const isInterestDisabled = (id) =>
+    selectedInteretCount.value >= MAX_CI && !form.centres_interet.includes(Number(id))
+
 
 // Liste des villes
 const villes = ref(villesData.villes)
@@ -16,43 +37,43 @@ const maxDate = nextYear.toISOString().split('T')[0]
 // Validation du formulaire
 const validateForm = () => {
     const errors = {}
-    
+
     if (!form.name_event.trim()) {
         errors.name_event = 'Le nom de l\'événement est requis.'
     }
-    
+
     if (!form.date) {
         errors.date = 'La date est requise.'
     } else {
         const selectedDate = new Date(form.date)
         const today = new Date()
         today.setHours(0, 0, 0, 0)
-        
+
         if (selectedDate < today) {
             errors.date = 'La date doit être aujourd\'hui ou une date ultérieure.'
         }
-        
+
         const maxDate = new Date()
         maxDate.setFullYear(maxDate.getFullYear() + 1)
         if (selectedDate > maxDate) {
             errors.date = 'La date ne peut pas être plus d\'un an dans le futur.'
         }
     }
-    
+
     if (!form.hour) {
         errors.hour = 'L\'heure est requise.'
     }
-    
+
     if (!form.location) {
         errors.location = 'Le lieu est requis.'
     }
-    
+
     if (!form.min_person) {
         errors.min_person = 'Le nombre minimum de participants est requis.'
     } else if (form.min_person < 1) {
         errors.min_person = 'Le nombre minimum de participants doit être d\'au moins 1.'
     }
-    
+
     if (!form.max_person) {
         errors.max_person = 'Le nombre maximum de participants est requis.'
     } else if (form.max_person < 1) {
@@ -60,32 +81,26 @@ const validateForm = () => {
     } else if (parseInt(form.max_person) <= parseInt(form.min_person)) {
         errors.max_person = 'Le nombre maximum de participants doit être supérieur au minimum.'
     }
-    
+
     if (form.picture_event) {
         const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg']
         const maxSize = 2 * 1024 * 1024 // 2MB
-        
+
         if (!allowedTypes.includes(form.picture_event.type)) {
             errors.picture_event = 'Le fichier doit être une image (JPEG, PNG, JPG).'
         } else if (form.picture_event.size > maxSize) {
             errors.picture_event = 'L\'image ne doit pas dépasser 2 Mo.'
         }
     }
-    
+
+    if ((form.centres_interet?.length || 0) > MAX_CI) {
+        errors.centres_interet = `Vous pouvez sélectionner au maximum ${MAX_CI} centres d’intérêt.`
+    }
+
     return errors
 }
 
-// Formulaire
-const form = useForm({
-    name_event: '',
-    description: '',
-    date: '',
-    hour: '',
-    location: '',
-    min_person: 1,
-    max_person: '',
-    picture_event: null,
-})
+
 
 // État pour prévisualisation et message de confirmation
 const previewUrl = ref(null)
@@ -114,7 +129,7 @@ const resetFieldError = (field) => {
 const submit = () => {
     // Validation côté client
     const errors = validateForm()
-    
+
     if (Object.keys(errors).length > 0) {
         validationErrors.value = errors
         // Faire défiler jusqu'au premier champ en erreur
@@ -126,10 +141,10 @@ const submit = () => {
         }
         return
     }
-    
+
     // Si la validation est passée, on envoie le formulaire
     form.post(route('events.store'), {
-        preserveScroll: true,
+        preserveScroll: true, forceFormData: true,
         onSuccess: () => {
             successMessage.value = '🎉 Événement créé avec succès !'
             form.reset()
@@ -146,7 +161,7 @@ const submit = () => {
                 for (const [field, messages] of Object.entries(errors.errors)) {
                     validationErrors.value[field] = Array.isArray(messages) ? messages[0] : messages
                 }
-                
+
                 // Faire défiler jusqu'au premier champ en erreur
                 const firstErrorField = Object.keys(errors.errors)[0]
                 const element = document.getElementById(firstErrorField)
@@ -282,7 +297,7 @@ const submit = () => {
 
                             <!-- Colonne de droite -->
                             <div class="space-y-6">
-                                <!-- Taille du groupe -->
+                                <!-- Particpants -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                         <label for="min_person" class="block text-sm font-medium text-gray-700 mb-1">
@@ -351,6 +366,77 @@ const submit = () => {
                                 </div>
                             </div>
                         </div>
+
+
+
+
+                        <!-- Centres d’intérêt (checkboxes) -->
+                        <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="block text-sm font-medium text-gray-700">
+                                    <i class="fa-solid fa-star mr-2 text-[#59c4b4]"></i>Centres d'intérêt
+                                </label>
+
+                                <button
+                                    type="button"
+                                    @click="form.centres_interet = []"
+                                    class="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                >
+                                    Effacer
+                                </button>
+                            </div>
+
+                            <!-- Indication -->
+                            <p class="mt-2 text-xs text-gray-500">
+                                * Tu peux choisir jusqu’à {{ MAX_CI }} centres d’intérêt ({{ selectedInteretCount }}/{{ MAX_CI }}).
+                            </p>
+
+                            <div
+                                :class="[
+      'rounded-lg border p-3',
+      validationErrors.centres_interet ? 'border-red-500' : 'border-gray-300'
+    ]"
+                            >
+                                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                    <!-- Checkboxes -->
+                                    <label
+                                        v-for="ci in (props.interets ?? [])"
+                                        :key="ci.id"
+                                        class="flex items-center gap-2 rounded-md border px-3 py-2 hover:border-[#59c4b4] transition"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            :value="Number(ci.id)"
+                                            v-model="form.centres_interet"
+                                            :disabled="isInterestDisabled(ci.id)"
+                                            class="h-4 w-4 text-[#59c4b4] border-gray-300 rounded focus:ring-[#59c4b4]"
+                                            :class="isInterestDisabled(ci.id) ? 'opacity-50 cursor-not-allowed' : ''"
+                                        />
+                                        <span class="text-sm text-gray-700">{{ ci.name }}</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <p v-if="validationErrors.centres_interet" class="mt-1 text-sm text-red-600">
+                                {{ validationErrors.centres_interet }}
+                            </p>
+
+                            <!-- Chips des sélectionnés  -->
+                            <div v-if="form.centres_interet.length" class="mt-2 flex flex-wrap gap-2">
+    <span
+        v-for="id in form.centres_interet"
+        :key="'chip-'+id"
+        class="inline-flex items-center text-xs bg-[#59c4b4]/10 text-[#59c4b4] px-2 py-1 rounded-full"
+    >
+      {{ (props.interets || []).find(ci => Number(ci.id) === Number(id))?.name }}
+    </span>
+                            </div>
+                        </div>
+
+
+
+
+
 
                         <!-- Description -->
                         <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">

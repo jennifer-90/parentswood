@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CentreInteret;
 use App\Models\Event;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -9,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Message;
+
 
 class EventController extends Controller
 {
@@ -20,8 +22,11 @@ class EventController extends Controller
     {
         $ville = $request->input('ville');
         $date = $request->input('date');
-
         $filter = $request->input('filter');
+        $interetId = $request->input('interet');
+
+        $today   = now()->toDateString();
+        $nowTime = now()->format('H:i:s');
 
         $query = Event::where('inactif', false);
 
@@ -34,32 +39,59 @@ class EventController extends Controller
         }
 
         if ($filter === 'week') {
-            $startOfWeek = now()->startOfWeek();
-            $endOfWeek = now()->endOfWeek();
-            $query->whereBetween('date', [$startOfWeek, $endOfWeek]);
+            $query->whereBetween('date', [now()->startOfWeek(), now()->endOfWeek()]);
+        } elseif ($filter === 'month') {
+            $query->whereBetween('date', [now()->startOfMonth(), now()->endOfMonth()]);
         }
 
-        if ($filter === 'month') {
-            $startOfMonth = now()->startOfMonth();
-            $endOfMonth = now()->endOfMonth();
-            $query->whereBetween('date', [$startOfMonth, $endOfMonth]);
+        if ($interetId) {
+            $query->whereHas('centresInteret', fn ($q) => $q->where('centres_interet.id', $interetId));
         }
 
-        // Tri par date croissante
-        $query->orderBy('date', 'asc');
+        // Compteurs de participants attendus par la vue
+        $query->withCount('participants')
+            ->orderBy('date', 'asc')
+            ->orderBy('hour', 'asc');
 
-        $upcomingEvents = $query->whereDate('date', '>', now())->paginate(10)->withQueryString();
+        $upcomingEvents = (clone $query)
+            ->where(function ($q) use ($today, $nowTime) {
+                $q->whereDate('date', '>', $today)
+                    ->orWhere(function ($q) use ($today, $nowTime) {
+                        $q->whereDate('date', $today)
+                            ->where('hour', '>=', $nowTime);
+                    });
+            })
+            ->paginate(10)
+            ->withQueryString();
+
         $pastEvents = Event::where('inactif', false)
-            ->whereDate('date', '<=', now())
+            ->where(function ($q) use ($today, $nowTime) {
+                $q->whereDate('date', '<', $today)
+                    ->orWhere(function ($q) use ($today, $nowTime) {
+                        $q->whereDate('date', $today)
+                            ->where('hour', '<', $nowTime);
+                    });
+            })
+            ->withCount('participants')
             ->orderBy('date', 'desc')
-            ->get();
+            ->orderBy('hour', 'desc')
+            ->paginate(10)
+            ->withQueryString();
+
+        $interets = CentreInteret::orderBy('name')->get(['id', 'name']);
 
         return Inertia::render('Events/Index', [
             'upcomingEvents' => $upcomingEvents,
-            'pastEvents' => $pastEvents,
+            'pastEvents'     => $pastEvents,
+            'interets'       => $interets,
+            'filters'        => [
+                'ville'   => $ville ?? '',
+                'date'    => $date ?? '',
+                'filter'  => $filter ?? '',
+                'interet' => $interetId ?? '',
+                ]
         ]);
     }
-
 
 
     /**
@@ -68,8 +100,13 @@ class EventController extends Controller
      */
     public function create()
     {
-        return Inertia::render('Events/Create');
+        $interets = \App\Models\CentreInteret::orderBy('name')->get(['id','name']);
+
+        return Inertia::render('Events/Create', [
+            'interets' => $interets,
+        ]);
     }
+
 
     /**
      * Enregistre un nouvel événement après validation.
@@ -85,21 +122,24 @@ class EventController extends Controller
             'date' => [
                 'required',
                 'date',
-                'after_or_equal:today',
-                function ($attribute, $value, $fail) {
+                'after_or_equal:today', function ($attribute, $value, $fail) {
                     $selectedDate = \Carbon\Carbon::parse($value);
                     $maxDate = now()->addYear();
                     if ($selectedDate->gt($maxDate)) {
                         $fail('La date ne peut pas être plus d\'un an dans le futur.');
                     }
-                },
-            ],
+                }],
+            //Requests
             'hour' => 'required',
             'location' => 'required|string|max:255',
             'min_person' => 'required|integer|min:1',
             'max_person' => 'required|integer|min:1|gt:min_person',
             'picture_event' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ], [
+
+            'centres_interet'   => 'nullable|array|max:5',
+            'centres_interet.*' => 'integer|exists:centres_interet,id',
+        ],
+            [//Messages
             'name_event.required' => 'Le nom de l\'événement est requis.',
             'date.required' => 'La date est requise.',
             'date.after_or_equal' => 'La date doit être aujourd\'hui ou une date ultérieure.',
@@ -118,18 +158,15 @@ class EventController extends Controller
         // Gestion de l'image uploadée
         if ($request->hasFile('picture_event')) {
             $validated['picture_event'] = $request->file('picture_event')->store('events', 'public');
-        } else {
-            // Image par défaut
+        } else {// Image par défaut
             $validated['picture_event'] = null;
         }
 
-
-        // Attribution de l'utilisateur créateur
         $validated['created_by'] = auth()->id();
 
-        // Création de l'événement
-        Event::create($validated);
+        $event = Event::create($validated);
 
+        $event->centresInteret()->sync($request->input('centres_interet', []));
         return redirect()->route('events.index')->with('success', 'Événement créé !');
     }
 
@@ -144,12 +181,22 @@ class EventController extends Controller
             abort(403, 'Action non autorisée.');
         }
 
+        $interets = CentreInteret::orderBy('name')->get(['id','name']);
+
+        // ⬅️ Important : on charge la relation sur l’event
+        $event->load('centresInteret:id,name');
+
         return Inertia::render('Events/Edit', [
-            'event' => $event
+            'event'    => $event,
+            'interets' => $interets,
+
         ]);
     }
 
-
+    /**
+     * reçoit le formulaire rempli, valide, met à jour l’event, gère l’upload/suppression d’image,
+     * fait le sync() des centres d’intérêt, puis renvoie une réponse (JSON/redirect).*
+     */
     public function update(Request $request, Event $event)
     {
         // Autorisation
@@ -176,8 +223,11 @@ class EventController extends Controller
                 'location'    => 'required|string|max:255',
                 'min_person'  => 'required|integer|min:1',
                 'max_person'  => 'required|integer|min:1|gt:min_person',
-                // picture_event → on ajoute la règle fichier UNIQUEMENT si un fichier est uploadé
                 'picture_event' => ['nullable'],
+
+                'centres_interet'   => 'nullable|array|max:5',
+                'centres_interet.*' => 'integer|exists:centres_interet,id',
+
             ];
 
             if ($request->hasFile('picture_event')) {
@@ -221,6 +271,8 @@ class EventController extends Controller
             }
 
             $event->update($validated);
+            $event->centresInteret()->sync($request->input('centres_interet', []));
+
 
             return response()->json([
                 'success' => true,
@@ -241,8 +293,6 @@ class EventController extends Controller
             ], 500);
         }
     }
-
-
 
 
     /**
@@ -287,11 +337,8 @@ class EventController extends Controller
     }
 
 
-
-
     /**
      * Affiche les détails d’un événement et les messages/commentaires associés.
-     * Vue : Events/Show
      */
     public function show(Event $event)
     {
@@ -300,6 +347,12 @@ class EventController extends Controller
         if ($event->inactif && !auth()->user()->hasAnyRole(['Admin', 'Super-admin']) && auth()->id() !== $event->created_by) {
             return redirect()->route('events.index')->with('error', 'Cet événement n\'est plus disponible.');
         }
+
+        $event->load([
+            'creator:id,pseudo',
+            'participants:id,pseudo',
+            'centresInteret:id,name',
+        ]);
 
         $messages = Message::where('event_id', $event->id)
             ->with('user:id,pseudo')
@@ -321,10 +374,8 @@ class EventController extends Controller
 
 
     /**
-     * Désactive un événement au lieu de le supprimer
+     * Désactive un événement
      *
-     * @param  \App\Models\Event  $event
-     * @return \Illuminate\Http\JsonResponse
      */
     public function deactivate(Request $request, Event $event): RedirectResponse|JsonResponse
     {
@@ -359,39 +410,6 @@ class EventController extends Controller
     }
 
 
-
-
-
-
-
-    /**
-     * Affiche la liste des événements (admin uniquement), paginés par 5.
-     * Vue : Events/AdminIndex
-     */
-
-    /*
-
-    public function adminIndex()
-    {
-        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return redirect()->back()->with('flash', [
-                'error' => 'Vous n\'êtes pas autorisé à accéder à cette page.',
-            ]);
-        }
-
-        $events = Event::with('creator:id,pseudo')
-            ->orderBy('created_at', 'desc')
-            ->paginate(5); // 5 événements par page
-
-        return Inertia::render('Events/AdminIndex', [
-            'events' => $events,
-        ]);
-    }
-
-    */
-
-
-
     /**
      * Active ou désactive un événement (bascule le champ 'inactif').
      * Admin/Super-admin uniquement.
@@ -402,14 +420,11 @@ class EventController extends Controller
         if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
             return back()->with('error', 'Action non autorisée.');
         }
-
         // Si l’événement a été annulé par le créateur -> non réactivable
         if ($event->cancelled_at && $event->inactif === true) {
             return back()->with('error', 'Événement annulé par le créateur : réactivation interdite.');
         }
-
         $event->update(['inactif' => !$event->inactif]);
-
         return back()->with('success',
             $event->inactif ? 'Événement désactivé.' : 'Événement activé.'
         );
@@ -426,14 +441,12 @@ class EventController extends Controller
         if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
             return back()->with('flash', ['error' => "Action non autorisée."]);
         }
-
         $event->update([
             'confirmed' => true,
             'inactif' => false,
             'validated_by_id' => auth()->id(),
             'validated_at' => now(),
         ]);
-
         return back()->with('success', 'Événement accepté.');
     }
 
@@ -537,8 +550,5 @@ class EventController extends Controller
         // la fin de sa session.
         return back()->with('success', 'Signalements remis à zéro.');
     }
-
-
-
 }
 

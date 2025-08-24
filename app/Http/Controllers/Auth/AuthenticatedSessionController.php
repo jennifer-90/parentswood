@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -37,6 +38,17 @@ class AuthenticatedSessionController extends Controller
         // Vérifiez si l'identifiant est un email ou un pseudo
         $field = filter_var($credentials['identifier'], FILTER_VALIDATE_EMAIL) ? 'email' : 'pseudo';
 
+
+        // Récupérer l'utilisateur AVANT la tentative de login
+        // -> But : si son compte est désactivé (is_actif = 0), on le bloque tout de suite
+        $user = User::where($field, $credentials['identifier'])->first();
+
+        if ($user && !$user->is_actif) {
+            return back()->withErrors([
+                'identifier' => "Votre compte a été désactivé par l'administration. Vous ne pouvez plus vous connecter.",
+            ])->onlyInput('identifier'); // on garde l'identifiant dans le champ
+        }
+
         // Tentative d'authentification
         if (!Auth::attempt([$field => $credentials['identifier'], 'password' => $credentials['password']], $request->boolean('remember'))) {
             return back()->withErrors([
@@ -44,11 +56,24 @@ class AuthenticatedSessionController extends Controller
             ])->onlyInput('identifier');
         }
 
+        //    si jamais le compte a été désactivé AU MÊME MOMENT (cas très rare),
+        //    on déconnecte et on affiche le même message.
+        if (!Auth::user()->is_actif) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return back()->withErrors([
+                'identifier' => "Votre compte a été désactivé par l'administration. Vous ne pouvez plus vous connecter.",
+            ])->onlyInput('identifier');
+        }
+
+        //Mettre à jour la date de dernière connexion
         $request->user()->update([
             'last_login' => now(),
         ]);
 
-        // Si l'authentification réussit
+        // Si l'authentification réussit| Regénéré l'ID session
         $request->session()->regenerate();
 
         return redirect()->intended(route('dashboard'));

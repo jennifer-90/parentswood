@@ -192,13 +192,6 @@
                                                                         {{ event.location || 'Lieu non précisé' }}
                                                                     </div>
                                                                 </div>
-                                                                <span
-                                                                    class="px-3 py-1 text-xs font-semibold rounded-full"
-                                                                    :class="event.status === 'confirmed'
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : 'bg-yellow-100 text-yellow-800'">
-                                                        {{ event.status === 'confirmed' ? 'Confirmé' : 'En attente' }}
-                                                    </span>
                                                             </div>
                                                             <p class="mt-2 text-gray-600 text-sm line-clamp-2">
                                                                 {{ event.description }}</p>

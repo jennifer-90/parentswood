@@ -14,21 +14,26 @@ return new class extends Migration {
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id(); // Clé primaire
-            $table->string('pseudo')->unique(); // Pseudo unique
-            $table->string('last_name'); // Nom de l'utilisateur
-            $table->string('first_name'); // Prénom de l'utilisateur
-            $table->string('genre'); // Genre (homme, femme, autre, etc.)
-            $table->string('email')->unique(); // Email unique
-            $table->timestamp('email_verified_at')->nullable(); // Vérification d'email
+            $table->string('pseudo')->unique(); // Pseudo unique |ok
+            $table->string('last_name'); // Nom de l'utilisateur |ok
+            $table->string('first_name'); // Prénom de l'utilisateur |ok
+            $table->string('genre'); // Genre (homme, femme, autre, etc.) |ok
+            $table->string('email')->unique(); // Email unique |ok
+            $table->timestamp('email_verified_at')->nullable(); // Vérification d'email (!!!)
             $table->string('password'); // Mot de passe
-            $table->string('localisation')->nullable(); // Localisation (optionnelle)
-            $table->string('picture_profil')->nullable(); // Photo de profil
-            $table->boolean('privacy_status')->default(1); // Statut de confidentialité (public/privé)
-            $table->boolean('is_actif')->default(1); // Compte actif
-            $table->integer('max_create_event')->default(5); // Limite d'événements
-            $table->boolean('anonyme')->default(0); // Anonymat
-            $table->unsignedBigInteger('centre_interet')->nullable(); // Clé étrangère pour centre d'intérêt
-            $table->timestamp('last_login')->nullable(); // Dernière connexion
+            $table->string('localisation')->nullable(); // Localisation (optionnelle) (!!!)
+            $table->string('picture_profil')->nullable(); // Photo de profil |ok
+
+            $table->boolean('privacy_status')->default(1); // page 404 si le status est 0 | user desactivé |ok
+            $table->boolean('is_actif')->default(1); // Compte actif |ok
+
+            $table->integer('max_create_event')->default(5); // Limite d'événements (!!!)
+            $table->boolean('anonyme')->default(0); // Anonymat |ok
+
+            $table->unsignedBigInteger('centre_interet')->nullable(); // Clé étrangère pour centre d'intérêt (!!!)
+
+            $table->timestamp('last_login')->nullable(); // Dernière connexion |ok
+
             $table->rememberToken(); // Token pour session persistante
             $table->timestamps(); // created_at et updated_at
 

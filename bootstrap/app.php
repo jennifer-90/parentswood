@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'throttle.login' => ThrottleRequests::class,
             'admin' => AdminMiddleware::class,
             'superadmin' => SuperAdminMiddleware::class,
+            'active' => \App\Http\Middleware\VerifyUserActif::class,
         ]);
 
 

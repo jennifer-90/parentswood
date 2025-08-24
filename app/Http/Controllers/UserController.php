@@ -26,9 +26,9 @@ class UserController extends Controller
 
         $me = auth()->user();
 
-        // SEARCH 
-        $searchUsers  = trim((string) $request->input('search_users'));  
-        $searchEvents = trim((string) $request->input('search_events')); 
+        // SEARCH
+        $searchUsers  = trim((string) $request->input('search_users'));
+        $searchEvents = trim((string) $request->input('search_events'));
 
         /* ----------------------------------------------------------------
         | SEARCH USERS : filtre sur TOUTE la base + pagination indépendante
@@ -107,7 +107,7 @@ class UserController extends Controller
             'cancelledBy:id,pseudo',
             ])
             ->select('id', 'name_event', 'date', 'hour', 'location', 'min_person', 'max_person', 'created_by', 'created_at', 'inactif', 'confirmed', 'validated_by_id', 'validated_at',  'reports_count', 'cancelled_at','cancelled_by')
-            
+
             // When ==> recherche sur toute la DB côté serveur (toutes les pages) avant la pagination
              ->when($searchEvents, function ($q) use ($searchEvents) {
             $q->where(function ($qq) use ($searchEvents) {
@@ -119,7 +119,7 @@ class UserController extends Controller
 
             ->orderBy('created_at', 'desc')
             ->paginate(10, ['*'], 'events_page') // << nom de page pour la liste Events
-            
+
              ->appends([
             'search_users'  => $searchUsers,
             'search_events' => $searchEvents,
@@ -144,24 +144,95 @@ class UserController extends Controller
 
 
     /**
-     * Affiche le profil d’un utilisateur connecté.
+     * Affiche le profil d’un utilisateur.
      */
     public function show(User $user)
     {
-        $eventsCreatedCount = Event::where('created_by', $user->id)->count();
+        // Si le profil est désactivé → 404
+        if (! $user->is_actif) {
+            abort(404);
+        }
 
+        // Compteurs simples
+        $eventsCreatedCount  = Event::where('created_by', $user->id)->count();
+        $eventsAttendedCount = $user->eventsParticipated()->count();
+
+        // "Maintenant" (attention au format de ta colonne "hour")
+        $today   = now()->toDateString();     // ex: 2025-08-21
+        $nowTime = now()->format('H:i:s');    // si ta colonne est "HH:MM:SS"
+        // $nowTime = now()->format('H:i');   // ← utilise ça si ta colonne est "HH:MM"
+
+        // === Participations à venir ===
+        $upcomingEvents = $user->eventsParticipated()
+            ->where('inactif', false)
+            ->where(function ($q) use ($today, $nowTime) {
+                $q->whereDate('date', '>', $today)
+                    ->orWhere(function ($q) use ($today, $nowTime) {
+                        $q->whereDate('date', $today)
+                            ->where('hour', '>=', $nowTime);
+                    });
+            })
+            ->select('events.id', 'events.name_event', 'events.date', 'events.hour', 'events.location', 'events.description')
+            ->withCount('participants') // => participants_count
+            ->orderBy('events.date', 'asc')
+            ->orderBy('events.hour', 'asc')
+            ->get()
+            ->map(function ($e) {
+                return [
+                    'id'                 => $e->id,
+                    'title'              => $e->name_event,
+                    'start_date'         => trim(($e->date?->toDateString() ?? '').' '.($e->hour ?? '')),
+                    'location'           => $e->location,
+                    'description'        => $e->description,
+                    'participants_count' => $e->participants_count,
+                ];
+            });
+
+        // === Participations passées ===
+        $pastEvents = $user->eventsParticipated()
+            ->where('inactif', false)
+            ->where(function ($q) use ($today, $nowTime) {
+                $q->whereDate('date', '<', $today)
+                    ->orWhere(function ($q) use ($today, $nowTime) {
+                        $q->whereDate('date', $today)
+                            ->where('hour', '<', $nowTime);
+                    });
+            })
+            ->select('events.id', 'events.name_event', 'events.date', 'events.hour', 'events.location')
+            ->withCount('participants')
+            ->orderBy('events.date', 'desc')
+            ->orderBy('events.hour', 'desc')
+            ->get()
+            ->map(function ($e) {
+                return [
+                    'id'                 => $e->id,
+                    'title'              => $e->name_event,
+                    'start_date'         => trim(($e->date?->toDateString() ?? '').' '.($e->hour ?? '')),
+                    'location'           => $e->location,
+                    'participants_count' => $e->participants_count,
+                ];
+            });
+
+        // === Liste "legacy" que tu utilisais déjà (je la garde telle quelle) ===
         $eventsParticipated = $user->eventsParticipated()
             ->select('events.id as event_id', 'name_event', 'date')
             ->orderBy('date', 'asc')
             ->get();
 
-
         return Inertia::render('UsersShow', [
             'user' => [
                 ...$user->toArray(),
-                'events_created' => $eventsCreatedCount,
-                'events_participated' => $eventsParticipated,
+
+                // Tes clés historiques
+                'events_created'       => $eventsCreatedCount,
+                'events_participated'  => $eventsParticipated,
+
+                // Clés utilisées par ta vue "Statistiques"
+                'events_created_count'  => $eventsCreatedCount,
+                'events_attended_count' => $eventsAttendedCount,
             ],
+            'upcomingEvents' => $upcomingEvents,
+            'pastEvents'     => $pastEvents,
         ]);
     }
 
@@ -189,6 +260,7 @@ class UserController extends Controller
      */
     public function toggleActivation(User $user)
     {
+
         $currentUser = auth()->user();
 
         if (!$currentUser->hasAnyRole(['Admin', 'Super-admin'])) {
@@ -343,7 +415,7 @@ class UserController extends Controller
     public function seedUsers(Request $request)
     {
 
-        if (!auth()->user()->hasAnyRole(['Super-admin','Admin'])) {
+        if (!auth()->user()->hasAnyRole(['Super-admin'])) {
             return back()->with('flash', ['error' => 'Action non autorisée.']);
         }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref , computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import axios from 'axios'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
@@ -8,15 +8,53 @@ import { Head } from '@inertiajs/vue3' // Permet de définir le titre de la page
 
 /*=====================================================================================*/
 
+// Petite fonction utilitaire : extraire un id quel que soit le format reçu
+const normalizeIds = (arr) => {
+    if (!Array.isArray(arr)) return []
+    return arr
+        .map((x) => {
+            // cas 1 : déjà un id (number/string)
+            if (typeof x === 'number' || typeof x === 'string') return Number(x)
+            // cas 2 : objets fréquents
+            if (x?.id != null) return Number(x.id)
+            if (x?.interet_id != null) return Number(x.interet_id)
+            if (x?.interest_id != null) return Number(x.interest_id)
+            if (x?.centre_interet_id != null) return Number(x.centre_interet_id)
+            // cas 3 : via pivot
+            if (x?.pivot?.interet_id != null) return Number(x.pivot.interet_id)
+            if (x?.pivot?.centre_interet_id != null) return Number(x.pivot.centre_interet_id)
+            return NaN
+        })
+        .filter(Number.isFinite) // enlève NaN
+}
+
+// Choisit le premier tableau "non vide" présent dans l'event
+const getSelectedIdsFromEvent = (ev) => {
+    const candidate =
+        (Array.isArray(ev?.centres_interet) && ev.centres_interet.length && ev.centres_interet) ||
+        (Array.isArray(ev?.centresInteret) && ev.centresInteret.length && ev.centresInteret) ||
+        (Array.isArray(ev?.interets) && ev.interets.length && ev.interets) ||
+        (Array.isArray(ev?.interests) && ev.interests.length && ev.interests) ||
+        [] // rien trouvé
+    return normalizeIds(candidate)
+}
+
+
+
+
+
+
 // ******** Liste des villes chargée depuis le JSON | Plus tard à faire via une API externe
 const villes = ref(villesData.villes)
-
 
 // ******** PROPS REÇUES depuis le contrôleur Inertia (backend Laravel)
 const props = defineProps({
     event: Object, //les données de l'événement à éditer
     errors: Object, //erreurs serveur
+    interets: { type: Array, default: () => [] },
 })
+const initialSelected = (props.event?.centres_interet ?? props.event?.centresInteret ?? [])
+    .map(ci => Number(ci.id ?? ci)) // support {id,name} ou simple id
 
 // ******** GESTION DES DATES pour limiter le choix dans l'input <date>
 const today = new Date().toISOString().split('T')[0]
@@ -77,9 +115,37 @@ const form = useForm({
     picture_event: null, // pas d'initialisation avec image existante
     _method: 'PUT',
     // _method: 'PUT' car on va utiliser POST + spoof (alternative: vrai axios.put)
+    centres_interet: [],
 })
+
+// Dès que props.event est disponible, on remplit form.centres_interet
+watch(
+    () => props.event,
+    (ev) => {
+        console.log('event reçu ->', JSON.parse(JSON.stringify(ev)))
+        form.centres_interet = getSelectedIdsFromEvent(ev)
+        console.log('ids sélectionnés ->', form.centres_interet)
+    },
+    { immediate: true }
+)
 // *****************************************************************************************
 //------------------------------------------------------------------------------------------
+
+
+// ******** Limite centre d'intérêt
+const MAX_CI = 5
+const selectedInteretCount = computed(() => form.centres_interet.length)
+const isInterestDisabled = (id) =>
+    selectedInteretCount.value >= MAX_CI && !form.centres_interet.includes(Number(id))
+const selectedCount = computed(() => form.centres_interet.length)
+const isSelected = (id) => form.centres_interet.includes(id)
+const toggleInterest = (id) => {
+    if (isSelected(id)) {
+        form.centres_interet = form.centres_interet.filter(x => x !== id)
+    } else if (form.centres_interet.length < MAX_CI) {
+        form.centres_interet = [...form.centres_interet, id]
+    }
+}
 
 
 // ******** Validation côté client
@@ -237,55 +303,94 @@ const restoreImage = () => {
 // *****************************************************************************************
 // ******** SUBMIT : envoi du formulaire au serveur (update event)
 const submit = async () => {
-    if (!validateForm()) return false
-
-    isLoading.value = true
-    Object.keys(validationErrors.value).forEach(k => (validationErrors.value[k] = ''))
-
-    const formData = new FormData()
-
-    ;['name_event', 'description', 'date', 'hour', 'location', 'min_person', 'max_person'].forEach((field) => {
-        if (form[field] !== null && form[field] !== undefined) {
-            formData.append(field, form[field])
-        }
-    })
-
-    if (form.picture_event instanceof File) {
-        formData.append('picture_event', form.picture_event, form.picture_event.name)
-    } else if (form.picture_event === 'REMOVE_IMAGE') {
-        formData.append('picture_event', 'REMOVE_IMAGE')
+    // 1) Validation côté client
+    // Si la validation échoue, on sort tout de suite.
+    // Pas besoin de `return false` avec @submit.prevent : `return;` suffit.
+    if (!validateForm()) {
+        return;
     }
 
-    // si tu gardes la route en POST avec spoof PUT :
-    formData.append('_method', 'PUT')
+    // 2) On affiche l'overlay de chargement et on vide les anciennes erreurs
+    isLoading.value = true;
+    validationErrors.value = {}; // reset propre
+
+    // 3) On prépare les données à envoyer au backend
+    const formData = new FormData();
+
+    // a) Champs simples (texte / nombres)
+    // On n'envoie pas les valeurs null/undefined/vides.
+    ['name_event', 'description', 'date', 'hour', 'location', 'min_person', 'max_person']
+        .forEach((field) => {
+            const value = form[field];
+            if (value !== null && value !== undefined && value !== '') {
+                formData.append(field, value);
+            }
+        });
+
+    // b) Centres d'intérêt (array)
+    // Laravel attend un tableau "centres_interet[]"
+    (form.centres_interet || []).forEach((id) => {
+        formData.append('centres_interet[]', Number(id));
+    });
+
+    // c) Image
+    // - Si l'utilisateur a choisi une nouvelle image => on l'envoie
+    // - Si l'utilisateur a cliqué "Supprimer" => on envoie le flag "REMOVE_IMAGE"
+    // - Sinon => on n'envoie rien et le backend garde l'image existante
+    if (form.picture_event instanceof File) {
+        formData.append('picture_event', form.picture_event, form.picture_event.name);
+    } else if (form.picture_event === 'REMOVE_IMAGE') {
+        formData.append('picture_event', 'REMOVE_IMAGE');
+    }
+
+    // d) Méthode spoofée pour Laravel (on fait un POST mais on veut un "PUT")
+    formData.append('_method', 'PUT');
 
     try {
+        // 4) Envoi au backend (axios gère tout seul le multipart/form-data)
         await axios.post(
             route('events.update', { event: props.event.id }),
-            formData // pas d'headers manuels
-        )
+            formData
+        );
 
-        successMessage.value = 'Événement mis à jour avec succès !'
-        errorMessage.value = ''
+        // 5) Succès UI
+        successMessage.value = 'Événement mis à jour avec succès !';
+        errorMessage.value = '';
+
+        // Petite redirection (optionnelle) après 1,5s
         setTimeout(() => {
-            window.location.href = route('events.index') //redirection
-        }, 1500)
+            window.location.href = route('events.index');
+        }, 1500);
     } catch (error) {
-        console.error('Erreur lors de la mise à jour:', error)
+        console.error('Erreur lors de la mise à jour:', error);
+
+        // 422 = erreurs de validation renvoyées par Laravel
         if (error.response?.status === 422) {
-            validationErrors.value = error.response.data.errors || {}
-            errorMessage.value = 'Veuillez corriger les erreurs dans le formulaire.'
+            const serverErrors = error.response?.data?.errors || {};
+            // On aplatit { field: [msg1, msg2] } en { field: 'msg1' } pour l'affichage
+            const flat = {};
+            Object.keys(serverErrors).forEach((key) => {
+                const msgs = serverErrors[key];
+                flat[key] = Array.isArray(msgs) ? msgs[0] : msgs;
+            });
+            validationErrors.value = flat;
+
+            errorMessage.value = 'Veuillez corriger les erreurs dans le formulaire.';
+            // On amène l'utilisateur au premier champ en erreur
+            scrollToFirstError();
         } else {
-            errorMessage.value = 'Une erreur est survenue lors de la mise à jour.'
+            // Erreur serveur générique
+            errorMessage.value = 'Une erreur est survenue lors de la mise à jour.';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     } finally {
-        isLoading.value = false
+        // 6) On coupe le spinner quoi qu'il arrive
+        isLoading.value = false;
     }
-}
+};
+
 // *****************************************************************************************
 //------------------------------------------------------------------------------------------
-
-
 
 
 // ******** DESACTIVATION DE L'ÉVÉNEMENT : requête PUT simple
@@ -323,7 +428,6 @@ const deactivateEvent = async () => {
     <Head :title="`Modifier ${event.name_event}`" />
 
     <AuthenticatedLayout>
-
         <!-- Overlay de chargement -->
         <div v-if="isLoading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white p-6 rounded-lg shadow-xl">
@@ -337,35 +441,31 @@ const deactivateEvent = async () => {
             </div>
         </div>
 
-        <!-- Message de succès -->
+        <!-- Toast succès -->
         <div v-if="successMessage" class="fixed top-4 right-4 z-50">
             <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
                 <span class="block sm:inline">{{ successMessage }}</span>
                 <span class="absolute top-0 bottom-0 right-0 px-4 py-3" @click="successMessage = ''">
-                    <svg class="fill-current h-6 w-6 text-green-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                        <title>Close</title>
-                        <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
-                    </svg>
-                </span>
+          <svg class="fill-current h-6 w-6 text-green-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+        </span>
             </div>
         </div>
 
-        <!-- Message d'erreur -->
+        <!-- Toast erreur -->
         <div v-if="errorMessage" class="fixed top-4 right-4 z-50">
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
                 <span class="block sm:inline">{{ errorMessage }}</span>
                 <span class="absolute top-0 bottom-0 right-0 px-4 py-3" @click="errorMessage = ''">
-                    <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                        <title>Close</title>
-                        <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
-                    </svg>
-                </span>
+          <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+        </span>
             </div>
         </div>
+
         <div class="py-4 bg-[#f9f5f2] min-h-screen">
             <div class="mx-auto w-full px-3 sm:px-5">
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
-                    <!-- En-tête avec icône -->
+
+                    <!-- En-tête -->
                     <div class="bg-transparent border-2 border-[#59c4b4] rounded-lg p-4 mb-8" style="background-color: rgba(89, 196, 180, 0.05);">
                         <div class="flex items-center justify-center gap-3">
                             <div class="bg-[#59c4b4] text-white rounded-full p-3">
@@ -376,16 +476,20 @@ const deactivateEvent = async () => {
                         <p class="mt-2 text-center text-gray-600">Mettez à jour les détails de votre événement</p>
                     </div>
 
-                    <!-- Message de succès -->
+                    <!-- Message de succès dans la carte -->
                     <div v-if="successMessage" class="mb-6 bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-center font-semibold shadow-sm">
                         {{ successMessage }}
                     </div>
 
+                    <!-- FORM -->
                     <form @submit.prevent="submit" class="space-y-6 max-w-3xl mx-auto">
+
+                        <!-- Grille 2 colonnes -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Colonne de gauche -->
+
+                            <!-- Colonne gauche -->
                             <div class="space-y-6">
-                                <!-- Nom de l'événement -->
+                                <!-- Nom -->
                                 <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                     <label for="name_event" class="block text-sm font-medium text-gray-700 mb-1">
                                         <i class="fa-solid fa-heading mr-2 text-[#59c4b4]"></i>Nom de l'événement
@@ -396,9 +500,9 @@ const deactivateEvent = async () => {
                                         type="text"
                                         id="name_event"
                                         :class="{
-                                            'border-red-500': validationErrors.name_event,
-                                            'border-gray-300': !validationErrors.name_event
-                                        }"
+                      'border-red-500': validationErrors.name_event,
+                      'border-gray-300': !validationErrors.name_event
+                    }"
                                         class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         placeholder="Ex: Soirée jeux de société"
                                     />
@@ -407,7 +511,7 @@ const deactivateEvent = async () => {
                                     </p>
                                 </div>
 
-                                <!-- Date et Heure -->
+                                <!-- Date & Heure -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                         <label for="date" class="block text-sm font-medium text-gray-700 mb-1">
@@ -419,9 +523,9 @@ const deactivateEvent = async () => {
                                             type="date"
                                             id="date"
                                             :class="{
-                                                'border-red-500': validationErrors.date,
-                                                'border-gray-300': !validationErrors.date
-                                            }"
+                        'border-red-500': validationErrors.date,
+                        'border-gray-300': !validationErrors.date
+                      }"
                                             class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                             :min="today"
                                             :max="maxDate"
@@ -430,6 +534,7 @@ const deactivateEvent = async () => {
                                             {{ validationErrors.date }}
                                         </p>
                                     </div>
+
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                         <label for="hour" class="block text-sm font-medium text-gray-700 mb-1">
                                             <i class="fa-regular fa-clock mr-2 text-[#59c4b4]"></i>Heure
@@ -440,9 +545,9 @@ const deactivateEvent = async () => {
                                             type="time"
                                             id="hour"
                                             :class="{
-                                                'border-red-500': validationErrors.hour,
-                                                'border-gray-300': !validationErrors.hour
-                                            }"
+                        'border-red-500': validationErrors.hour,
+                        'border-gray-300': !validationErrors.hour
+                      }"
                                             class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
                                         <p v-if="validationErrors.hour" class="mt-1 text-sm text-red-600">
@@ -451,7 +556,7 @@ const deactivateEvent = async () => {
                                     </div>
                                 </div>
 
-                                <!-- Lieu -->
+                                <!-- Ville -->
                                 <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                     <label for="location" class="block text-sm font-medium text-gray-700 mb-1">
                                         <i class="fa-solid fa-location-dot mr-2 text-[#59c4b4]"></i>Ville
@@ -461,9 +566,9 @@ const deactivateEvent = async () => {
                                         @change="resetFieldError('location')"
                                         id="location"
                                         :class="{
-                                            'border-red-500': validationErrors.location,
-                                            'border-gray-300': !validationErrors.location
-                                        }"
+                      'border-red-500': validationErrors.location,
+                      'border-gray-300': !validationErrors.location
+                    }"
                                         class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                     >
                                         <option value="" disabled>Sélectionnez une ville</option>
@@ -475,9 +580,9 @@ const deactivateEvent = async () => {
                                 </div>
                             </div>
 
-                            <!-- Colonne de droite -->
+                            <!-- Colonne droite -->
                             <div class="space-y-6">
-                                <!-- Taille du groupe -->
+                                <!-- Min/Max -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                         <label for="min_person" class="block text-sm font-medium text-gray-700 mb-1">
@@ -490,15 +595,16 @@ const deactivateEvent = async () => {
                                             id="min_person"
                                             min="1"
                                             :class="{
-                                                'border-red-500': validationErrors.min_person,
-                                                'border-gray-300': !validationErrors.min_person
-                                            }"
+                        'border-red-500': validationErrors.min_person,
+                        'border-gray-300': !validationErrors.min_person
+                      }"
                                             class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
                                         <p v-if="validationErrors.min_person" class="mt-1 text-sm text-red-600">
                                             {{ validationErrors.min_person }}
                                         </p>
                                     </div>
+
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                         <label for="max_person" class="block text-sm font-medium text-gray-700 mb-1">
                                             <i class="fa-solid fa-users mr-2 text-[#59c4b4]"></i>Max. participants
@@ -510,9 +616,9 @@ const deactivateEvent = async () => {
                                             id="max_person"
                                             :min="form.min_person || 1"
                                             :class="{
-                                                'border-red-500': validationErrors.max_person,
-                                                'border-gray-300': !validationErrors.max_person
-                                            }"
+                        'border-red-500': validationErrors.max_person,
+                        'border-gray-300': !validationErrors.max_person
+                      }"
                                             class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
                                         <p v-if="validationErrors.max_person" class="mt-1 text-sm text-red-600">
@@ -521,8 +627,7 @@ const deactivateEvent = async () => {
                                     </div>
                                 </div>
 
-                                <!-- Téléchargement de l'image -->
-                                <!-- Téléchargement de l'image -->
+                                <!-- Image -->
                                 <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">
                                         <i class="fa-solid fa-image mr-2 text-[#59c4b4]"></i>Image de l'événement
@@ -545,15 +650,14 @@ const deactivateEvent = async () => {
                                             @change="handleFileChange"
                                         />
 
-                                        <!-- Boutons Supprimer / Rétablir -->
+                                        <!-- Supprimer / Rétablir -->
                                         <button
                                             v-if="(previewUrl || currentImageUrl) && form.picture_event !== 'REMOVE_IMAGE'"
                                             @click="removeCurrentImage"
                                             type="button"
                                             class="ml-3 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                                         >
-                                            <i class="fa-solid fa-trash mr-1"></i>
-                                            Supprimer
+                                            <i class="fa-solid fa-trash mr-1"></i>Supprimer
                                         </button>
                                         <button
                                             v-else-if="form.picture_event === 'REMOVE_IMAGE'"
@@ -561,8 +665,7 @@ const deactivateEvent = async () => {
                                             type="button"
                                             class="ml-3 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                                         >
-                                            <i class="fa-solid fa-rotate-left mr-1"></i>
-                                            Rétablir
+                                            <i class="fa-solid fa-rotate-left mr-1"></i>Rétablir
                                         </button>
                                     </div>
 
@@ -570,11 +673,8 @@ const deactivateEvent = async () => {
                                         {{ validationErrors.picture_event }}
                                     </p>
 
-                                    <!-- Aperçu / messages (chaîne unique et adjacente) -->
-                                    <div
-                                        v-if="previewUrl || (currentImageUrl && form.picture_event !== 'REMOVE_IMAGE')"
-                                        class="mt-4"
-                                    >
+                                    <!-- Aperçu -->
+                                    <div v-if="previewUrl || (currentImageUrl && form.picture_event !== 'REMOVE_IMAGE')" class="mt-4">
                                         <p class="text-sm font-medium text-gray-700 mb-2">
                                             {{ previewUrl && imageChanged ? 'Nouvel aperçu :' : 'Image actuelle :' }}
                                         </p>
@@ -596,54 +696,99 @@ const deactivateEvent = async () => {
                                         </div>
                                     </div>
 
-                                    <div
-                                        v-else-if="form.picture_event === 'REMOVE_IMAGE'"
-                                        class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md"
-                                    >
+                                    <div v-else-if="form.picture_event === 'REMOVE_IMAGE'" class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                                         <p class="text-sm text-yellow-700 flex items-center">
                                             <i class="fas fa-exclamation-triangle mr-2"></i>
                                             L'image sera supprimée lors de l'enregistrement des modifications.
-                                            <button
-                                                @click="restoreImage"
-                                                type="button"
-                                                class="ml-2 text-yellow-700 hover:text-yellow-900 font-medium"
-                                            >
+                                            <button @click="restoreImage" type="button" class="ml-2 text-yellow-700 hover:text-yellow-900 font-medium">
                                                 Annuler
                                             </button>
                                         </p>
                                     </div>
 
-                                    <div
-                                        v-else
-                                        class="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-600"
-                                    >
+                                    <div v-else class="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-600">
                                         Aucune image pour cet événement.
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                        <!-- /Grille 2 colonnes -->
 
+                        <!-- Centres d’intérêt (PLEINE LARGEUR, comme create.vue) -->
+                        <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="block text-sm font-medium text-gray-700">
+                                    <i class="fa-solid fa-star mr-2 text-[#59c4b4]"></i>Centres d'intérêt
+                                </label>
+                                <button
+                                    type="button"
+                                    @click="form.centres_interet = []"
+                                    class="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                >
+                                    Effacer
+                                </button>
+                            </div>
 
-                                <!-- Description -->
-                                <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-                                    <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
-                                        <i class="fa-regular fa-comment-dots mr-2 text-[#59c4b4]"></i>Description
+                            <p class="mt-2 text-xs text-gray-500">
+                                * Tu peux choisir jusqu’à {{ MAX_CI }} centres d’intérêt ({{ selectedInteretCount }}/{{ MAX_CI }}).
+                            </p>
+
+                            <div :class="['rounded-lg border p-3', validationErrors.centres_interet ? 'border-red-500' : 'border-gray-300']">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                    <label
+                                        v-for="ci in (props.interets ?? [])"
+                                        :key="ci.id"
+                                        class="flex items-center gap-2 rounded-md border px-3 py-2 hover:border-[#59c4b4] transition"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            :value="Number(ci.id)"
+                                            v-model="form.centres_interet"
+                                            :disabled="isInterestDisabled(ci.id)"
+                                            class="h-4 w-4 text-[#59c4b4] border-gray-300 rounded focus:ring-[#59c4b4]"
+                                            :class="isInterestDisabled(ci.id) ? 'opacity-50 cursor-not-allowed' : ''"
+                                        />
+                                        <span class="text-sm text-gray-700">{{ ci.name }}</span>
                                     </label>
-                                    <textarea
-                                        v-model="form.description"
-                                        @input="resetFieldError('description')"
-                                        id="description"
-                                        rows="4"
-                                        :class="{
-                                            'border-red-500': validationErrors.description,
-                                            'border-gray-300': !validationErrors.description
-                                        }"
-                                        class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
-                                        placeholder="Décrivez votre événement en détail..."
-                                    ></textarea>
-                                    <p v-if="validationErrors.description" class="mt-1 text-sm text-red-600">
-                                        {{ validationErrors.description }}
-                                    </p>
                                 </div>
                             </div>
+
+                            <p v-if="validationErrors.centres_interet" class="mt-1 text-sm text-red-600">
+                                {{ validationErrors.centres_interet }}
+                            </p>
+
+                            <!-- Chips -->
+                            <div v-if="form.centres_interet.length" class="mt-2 flex flex-wrap gap-2">
+                <span
+                    v-for="id in form.centres_interet"
+                    :key="'chip-'+id"
+                    class="inline-flex items-center text-xs bg-[#59c4b4]/10 text-[#59c4b4] px-2 py-1 rounded-full"
+                >
+                  {{ (props.interets || []).find(ci => Number(ci.id) === Number(id))?.name }}
+                </span>
+                            </div>
+                        </div>
+
+                        <!-- Description (PLEINE LARGEUR, comme create.vue) -->
+                        <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                            <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
+                                <i class="fa-regular fa-comment-dots mr-2 text-[#59c4b4]"></i>Description
+                            </label>
+                            <textarea
+                                v-model="form.description"
+                                @input="resetFieldError('description')"
+                                id="description"
+                                rows="4"
+                                :class="{
+                  'border-red-500': validationErrors.description,
+                  'border-gray-300': !validationErrors.description
+                }"
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
+                                placeholder="Décrivez votre événement en détail..."
+                            ></textarea>
+                            <p v-if="validationErrors.description" class="mt-1 text-sm text-red-600">
+                                {{ validationErrors.description }}
+                            </p>
                         </div>
 
                         <!-- Boutons d'action -->
@@ -653,25 +798,23 @@ const deactivateEvent = async () => {
                                     :href="route('events.show', event.id)"
                                     class="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 flex items-center justify-center"
                                 >
-                                    <i class="fa-solid fa-eye mr-2"></i>
-                                    Voir l'événement
+                                    <i class="fa-solid fa-eye mr-2"></i>Voir l'événement
                                 </a>
                                 <button
                                     type="button"
                                     @click="deactivateEvent"
                                     class="px-4 py-2 border border-red-300 text-red-700 font-medium rounded-lg hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 flex items-center justify-center"
                                 >
-                                    <i class="fa-solid fa-eye-slash mr-2"></i>
-                                    Désactiver
+                                    <i class="fa-solid fa-eye-slash mr-2"></i>Désactiver
                                 </button>
                             </div>
+
                             <div class="flex flex-col sm:flex-row gap-3">
                                 <a
                                     :href="route('events.index')"
                                     class="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 flex items-center justify-center"
                                 >
-                                    <i class="fa-solid fa-arrow-left mr-2"></i>
-                                    Retour
+                                    <i class="fa-solid fa-arrow-left mr-2"></i>Retour
                                 </a>
                                 <button
                                     type="submit"
@@ -685,11 +828,13 @@ const deactivateEvent = async () => {
                             </div>
                         </div>
                     </form>
+                    <!-- /FORM -->
                 </div>
             </div>
         </div>
     </AuthenticatedLayout>
 </template>
+
 
 <style scoped>
 /* Styles spécifiques pour cette page */

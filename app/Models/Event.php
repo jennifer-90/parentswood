@@ -67,5 +67,11 @@ class Event extends Model
         return $this->belongsTo(User::class, 'cancelled_by');
     }
 
+    public function centresInteret()
+    {
+        return $this->belongsToMany(CentreInteret::class, 'centre_interet_event', 'event_id', 'centre_interet_id')
+            ->withTimestamps();
+    }
+
 
 }
