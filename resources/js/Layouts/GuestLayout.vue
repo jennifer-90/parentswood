@@ -1,10 +1,15 @@
 <script setup>
 import { Link, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Footer from "@/Components/Footer.vue";
+import Flash from '@/Components/Flash.vue'
 
 const page = usePage();
 const currentRoute = computed(() => page.url);
+const showingMobileMenu = ref(false)
+
+
+
 </script>
 
 <template>
@@ -143,6 +148,11 @@ const currentRoute = computed(() => page.url);
             </div>
         </header>
 
+        <!-- Flash global (affiche $page.props.flash) -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+            <Flash />
+        </div>
+
         <!-- Contenu principal -->
         <main>
             <slot />
@@ -151,21 +161,6 @@ const currentRoute = computed(() => page.url);
         <Footer />
     </div>
 </template>
-
-<script>
-import { ref } from 'vue';
-import Footer from '@/Components/Footer.vue'
-
-export default {
-    setup() {
-        const showingMobileMenu = ref(false);
-
-        return {
-            showingMobileMenu
-        };
-    }
-};
-</script>
 
 <style scoped>
 /* Animation pour le menu mobile */

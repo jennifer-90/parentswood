@@ -20,6 +20,9 @@
                                 </div>
                             </div>
 
+
+
+
                             <!-- Bannière de profil -->
                             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-8">
                                 <div class="relative h-48 bg-gradient-to-r from-teal-500 to-teal-300 rounded-t-lg">
@@ -35,10 +38,11 @@
                                             <div
                                                 class="h-32 w-32 rounded-full border-4 border-white bg-white shadow-lg overflow-hidden">
                                                 <img
-                                                    :src="$page.props.auth.user.picture_profil || '/images/default-avatar.png'"
+                                                    :src="user.picture_profil_url || '/images/default-avatar.png'"
                                                     alt="Photo de profil"
                                                     class="h-full w-full object-cover"
-                                                >
+                                                />
+
                                             </div>
 
                                             <div
@@ -83,6 +87,28 @@
                                     </div>
                                 </div>
                             </div>
+
+
+                            <Link
+                                v-if="$page.props.auth.user && $page.props.auth.user.id !== user.id && !user.i_blocked"
+                                :href="route('users.block', user.id)"
+                                method="post"
+                                as="button"
+                                class="px-3 py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                            >
+                                Bloquer
+                            </Link>
+
+                            <Link
+                                v-else-if="$page.props.auth.user && $page.props.auth.user.id !== user.id && user.i_blocked"
+                                :href="route('users.unblock', user.id)"
+                                method="delete"
+                                as="button"
+                                class="px-3 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            >
+                                Débloquer
+                            </Link>
+
 
                             <!-- Grille principale -->
                             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -200,7 +226,7 @@
                                                                     <img
                                                                         v-for="(participant, index) in event.participants?.slice(0, 3)"
                                                                         :key="index"
-                                                                        :src="participant.profile_photo_url || 'https://ui-avatars.com/api/?name=' + participant.name"
+                                                                        :src="participant.picture_profil_url || '/images/default-avatar.png'"
                                                                         class="h-8 w-8 rounded-full border-2 border-white"
                                                                         :title="participant.name">
                                                                     <div v-if="event.participants?.length > 3"

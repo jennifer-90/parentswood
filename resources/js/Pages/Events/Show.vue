@@ -223,7 +223,7 @@ const reportEvent = () => {
 
 
                                                 <div class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                                                    <Link v-if="event.creator" :href="route('users.show', event.creator.id)" class="text-blue-600 hover:underline">
+                                                    <Link v-if="event.creator" :href="route('users.show', { user: event.creator.pseudo })" class="text-blue-600 hover:underline">
                                                         {{ event.creator.pseudo }}
                                                     </Link>
                                                     <span v-else>Inconnu</span>
@@ -296,11 +296,11 @@ const reportEvent = () => {
                                     <div class="flex flex-wrap gap-3">
                                         <div v-for="participant in event.participants" :key="participant.id" class="flex items-center">
                                             <Link
-                                                :href="route('users.show', participant.id)"
+                                                :href="route('users.show', { user: participant.pseudo })"
                                                 class="group flex items-center"
                                             >
                                                 <img
-                                                    :src="participant.picture || '/images/default-avatar.png'"
+                                                    :src="participant.picture_profil_url || '/images/default-avatar.png'"
                                                     :alt="participant.pseudo"
                                                     class="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:border-[#59c4b4] transition-colors"
                                                 />
@@ -337,9 +337,9 @@ const reportEvent = () => {
                             <div class="flex-1 overflow-y-auto p-4 comments-container" style="max-height: 500px;">
                                 <div v-if="messages && messages.length > 0" class="space-y-4">
                                     <div v-for="message in messages" :key="message.id" class="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                                        <Link :href="route('users.show', message.user.id)" class="flex-shrink-0">
+                                        <Link :href="route('users.show', { user: message.user.pseudo })" class="flex-shrink-0">
                                             <img
-                                                :src="message.user.picture || '/images/default-avatar.png'"
+                                                :src="message.user.picture_profil_url || '/images/default-avatar.png'"
                                                 :alt="message.user.pseudo"
                                                 class="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
                                             />
@@ -347,7 +347,7 @@ const reportEvent = () => {
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center justify-between">
                                                 <Link
-                                                    :href="route('users.show', message.user.id)"
+                                                    :href="route('users.show', { user: message.user.pseudo })"
                                                     class="font-medium text-gray-900 hover:text-[#59c4b4] transition-colors"
                                                 >
                                                     {{ message.user.pseudo }}

@@ -167,7 +167,7 @@ class EventController extends Controller
         $event = Event::create($validated);
 
         $event->centresInteret()->sync($request->input('centres_interet', []));
-        return redirect()->route('events.index')->with('success', 'Événement créé !');
+        return redirect()->route('events.index')->with('flash', ['success' => 'Événement créé !']);
     }
 
     /**
@@ -302,11 +302,11 @@ class EventController extends Controller
     public function join(Event $event)
     {
         if ($event->participants()->where('user_id', auth()->id())->exists()) {
-            return back()->with('error', 'Tu participes déjà à cet événement.');
+            return back()->with('flash', ['error' => 'Tu participes déjà à cet événement.']);
         }
 
         $event->participants()->attach(auth()->id());
-        return back()->with('success', 'Tu as rejoint cet évènement !');
+            return back()->with('flash', ['success' => 'Tu as rejoint cet évènement !']);
     }
 
 
@@ -330,10 +330,9 @@ class EventController extends Controller
         // Recharger les relations pour mettre à jour le compteur
         $event->load('participants');
 
-        return back()->with([
-            'status' => $message,
-            'event' => $event->fresh()
-        ]);
+        return redirect()
+            ->route('events.show', $event->id)
+            ->with('flash', ['success' => $message]);
     }
 
 
@@ -345,17 +344,17 @@ class EventController extends Controller
         if (!auth()->check()) return redirect()->route('login');
 
         if ($event->inactif && !auth()->user()->hasAnyRole(['Admin', 'Super-admin']) && auth()->id() !== $event->created_by) {
-            return redirect()->route('events.index')->with('error', 'Cet événement n\'est plus disponible.');
+            return redirect()->route('events.index')->with('flash', ['error' => "Cet événement n'est plus disponible."]);
         }
 
         $event->load([
             'creator:id,pseudo',
-            'participants:id,pseudo',
+            'participants:id,pseudo,picture_profil',
             'centresInteret:id,name',
         ]);
 
         $messages = Message::where('event_id', $event->id)
-            ->with('user:id,pseudo')
+            ->with('user:id,pseudo,picture_profil')
             ->latest()
             ->get();
 
@@ -399,7 +398,7 @@ class EventController extends Controller
         }
 
         return redirect()->route('events.index')
-            ->with('success', "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs.");
+            ->with('flash', ['success' => "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs."]);
     }
 
 
@@ -418,11 +417,11 @@ class EventController extends Controller
     {
         // Admin / Super-admin uniquement
         if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return back()->with('error', 'Action non autorisée.');
+            return back()->with('flash', ['error'   => 'Action non autorisée.']);
         }
         // Si l’événement a été annulé par le créateur -> non réactivable
         if ($event->cancelled_at && $event->inactif === true) {
-            return back()->with('error', 'Événement annulé par le créateur : réactivation interdite.');
+            return back()->with('flash', ['success' => $event->inactif ? 'Événement désactivé.' : 'Événement activé.']);
         }
         $event->update(['inactif' => !$event->inactif]);
         return back()->with('success',
@@ -447,7 +446,10 @@ class EventController extends Controller
             'validated_by_id' => auth()->id(),
             'validated_at' => now(),
         ]);
-        return back()->with('success', 'Événement accepté.');
+
+        $event->participants()->syncWithoutDetaching([$event->created_by]);
+
+        return back()->with('flash', ['success' => 'Événement accepté.']);
     }
 
     /**
@@ -467,7 +469,7 @@ class EventController extends Controller
             'validated_at' => now(),
         ]);
 
-        return back()->with('success', 'Événement refusé.');
+        return back()->with('flash', ['success' => 'Événement refusé.']);
     }
 
     public function exportEvents()
@@ -498,12 +500,12 @@ class EventController extends Controller
     {
         // Créateur SEULEMENT
         if (auth()->id() !== $event->created_by) {
-            return back()->with('error', 'Seul le créateur peut annuler cet événement.');
+            return back()->with('flash', ['error'   => 'Seul le créateur peut annuler cet événement.']);
         }
 
         // Si déjà annulé, on ne fait rien
         if ($event->cancelled_at) {
-            return back()->with('info', 'Cet événement est déjà annulé.');
+            return back()->with('flash', ['info'    => 'Cet événement est déjà annulé.']);
         }
 
         $event->update([
@@ -513,7 +515,7 @@ class EventController extends Controller
             'cancelled_by' => auth()->id(), // = créateur
         ]);
 
-        return back()->with('success', "L'événement a été annulé (action définitive).");
+        return back()->with('flash', ['success' => "L'événement a été annulé (action définitive)."]);
     }
 
 
@@ -524,14 +526,14 @@ class EventController extends Controller
         // Tous les users sont loggés chez toi, donc ok.
         $key = "reported_event_{$event->id}";
         if (session()->has($key)) {
-            return back()->with('success', 'Merci, vous avez déjà signalé cet événement.');
+            return back()->with('flash', ['success' => 'Merci, vous avez déjà signalé cet événement.']);
         }
 
         // Incrément simple et marquage session
         $event->increment('reports_count');
         session()->put($key, true);
 
-        return back()->with('success', 'Merci pour votre signalement.');
+        return back()->with('flash', ['success' => 'Merci pour votre signalement.']);
     }
 
 
@@ -548,7 +550,7 @@ class EventController extends Controller
         // Optionnel : vider les “déjà signalé” de toutes les sessions n’est pas faisable,
         // mais ce n’est pas gênant : au pire l’utilisateur verra “déjà signalé” jusqu’à
         // la fin de sa session.
-        return back()->with('success', 'Signalements remis à zéro.');
+        return back()->with('flash', ['success' => 'Signalements remis à zéro.']);
     }
 }
 

@@ -20,7 +20,7 @@ class DatabaseSeeder extends Seeder
         $this->call(CentresInteretSeeder::class);
         $this->call(RolesSeeder::class);
         $this->call(UsersSeeder::class);
-        $this->call(EventsSeeder::class);
+        //$this->call(EventsSeeder::class);
         $this->call(MessagesSeeder::class);
         $this->call(EventMessageSeeder::class);
         $this->call(CentreInteretEventSeeder::class);

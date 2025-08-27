@@ -22,43 +22,90 @@ class ProfileController extends Controller
 
         return Inertia::render('Profile/Edit', [
             'mustVerifyEmail' => $user instanceof MustVerifyEmail,
-            'status'          => session('status'),
-            'auth' => [
-                'user' => array_merge($user->only([
-                    'id', 'first_name', 'last_name', 'pseudo', 'email', 'picture_profil'
-                ]), [
-                    'roles' => $user->roles->pluck('name')->toArray()
-                ]),
-            ],
         ]);
     }
+
+
+    /**
+     * Désactive le compte de l'utilisateur courant (mise en inactif).
+     */
+    public function deactivateYourself(Request $request): RedirectResponse
+    {
+        // Exige le mot de passe actuel
+        $request->validate([
+            'password' => ['required', 'current_password'],
+        ]);
+
+        $user = $request->user();
+
+        // Si déjà inactif, on évite un update inutile
+        if (!$user->is_actif) {
+            // Déconnexion + nettoyage session pour être cohérent
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return Redirect::to('/')
+                ->with('flash', ['success' => 'Votre compte est déjà inactif. Vous avez été déconnecté.']);
+        }
+
+        // Mise en inactif
+        $user->update(['is_actif' => false]);
+
+        // Déconnexion + nettoyage session
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return Redirect::to('/')
+            ->with('flash', ['success' => 'Votre compte a été désactivé (inactif). Vous pouvez le réactiver plus tard via le support.']);
+    }
+
 
     /**
      * Mettre à jour les infos de profil (prénom, nom, pseudo, email, photo).
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        // Récupère les données validées
+        // 1) Validation
         $data = $request->validated();
 
-        // Si nouvelle photo, on la stocke
+        // 2) LOGS de diagnostic (temporaire)
+        \Log::info('hasFile?', ['has' => $request->hasFile('picture_profil')]);
         if ($request->hasFile('picture_profil')) {
-            $data['picture_profil'] = $request->file('picture_profil')
-                ->store('users', 'public');
+            \Log::info('file info', [
+                'original' => $request->file('picture_profil')->getClientOriginalName(),
+                'mime'     => $request->file('picture_profil')->getMimeType(),
+                'size'     => $request->file('picture_profil')->getSize(),
+            ]);
         }
 
-        // Si l'email a changé, on réinitialise la vérification
+        $oldPath = $request->user()->picture_profil;
+
+        // 3) Si nouvelle photo, on la stocke sur le disque "public"
+        if ($request->hasFile('picture_profil')) {
+            $data['picture_profil'] = $request->file('picture_profil')->store('users', 'public');
+
+            // on supprime l’ancienne si elle existe
+            if ($oldPath) {
+                \Storage::disk('public')->delete($oldPath);
+            }
+        } else {
+            // si pas de nouvelle image, on ne touche pas au champ
+            unset($data['picture_profil']);
+        }
+
+        // 4) Reset email_verified_at si l’email change
         if (isset($data['email']) && $request->user()->email !== $data['email']) {
             $data['email_verified_at'] = null;
         }
 
-        // Mise à jour en base
+        // 5) Update en base
         $request->user()->update($data);
 
         return Redirect::route('profile.edit')
-            ->with('status', 'Profil mis à jour !');
+            ->with('flash', ['success' => 'Profil mis à jour !']);
     }
-
 
 
     /**
@@ -75,7 +122,7 @@ class ProfileController extends Controller
         ]);
 
         return Redirect::route('profile.edit')
-            ->with('status', 'Pseudo mis à jour !');
+            ->with('flash', ['success' => 'Pseudo mis à jour !']);
     }
 
     /**
@@ -94,7 +141,7 @@ class ProfileController extends Controller
         ]);
 
         return Redirect::route('profile.edit')
-            ->with('status', 'Mot de passe mis à jour !');
+            ->with('flash', ['success' => 'Mot de passe mis à jour !']);
     }
 
     /**

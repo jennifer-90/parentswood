@@ -21,10 +21,10 @@
                         <div class="flex flex-col items-center">
                             <div class="relative group">
                                 <img
-                                    :src="$page.props.auth.user.picture_profil || '/images/default-avatar.png'"
+                                    :src="$page.props.auth.user.picture_profil_url || '/images/default-avatar.png'"
                                     alt="Photo de profil"
                                     class="w-32 h-32 rounded-full border-4 border-white shadow-lg transition-transform duration-300 group-hover:scale-105"
-                                />
+                                >
                                 <div class="absolute inset-0 rounded-full bg-black bg-opacity-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                                     <span class="text-white text-sm font-medium">Modifier</span>
                                 </div>

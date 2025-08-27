@@ -20,6 +20,6 @@ class MessageController extends Controller
             'text'     => $data['text'],
         ]);
 
-        return back()->with('success', 'Message ajouté');
+        return back()->with('flash', ['success' => 'Message ajouté']);
     }
 }

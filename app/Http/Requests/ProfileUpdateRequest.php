@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class ProfileUpdateRequest extends FormRequest
@@ -24,14 +25,13 @@ class ProfileUpdateRequest extends FormRequest
     public function rules(): array
     {
 
-
         return [
             // TOUS en "sometimes" pour que l'absence du champ ne déclenche PAS d'erreur
             'first_name'     => ['sometimes','string','max:255'],
             'last_name'      => ['sometimes','string','max:255'],
             'pseudo'         => ['sometimes','string','max:255','unique:users,pseudo,' . $this->user()->id],
             'email'          => ['sometimes','email','max:255','unique:users,email,' . $this->user()->id],
-            'picture_profil' => ['sometimes','nullable','image','max:2048'],
+            'picture_profil' => ['nullable','image','mimes:jpeg,png,jpg','max:2048'],
         ];
     }
 
@@ -41,5 +41,8 @@ class ProfileUpdateRequest extends FormRequest
         // ou laisser Laravel générer ses défauts si vous n'avez pas besoin de français.
         return [];
     }
+
+
+
 
 }

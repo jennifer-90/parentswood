@@ -8,6 +8,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 const route = window.route;
 
 
+
+
 /** Lance la recherche après +-300 ms sans frappe (évite une requête par lettre). */
 function debounce(action, delaiMs = 300) {
     let timeout = null;
@@ -97,23 +99,28 @@ const nowConnectUserId = nowConnectUser.id;
 
 /* ########## TEXTE DYNAMIQUE POUR LE TITRE DE LA PAGE ADMIN ##################################################*/
 const adminTitle = computed(() => {
-  const role = nowConnectUser?.role;
-  if (role === 'Super-admin') return 'Gestion Super Admin';
-  if (role === 'Admin') return 'Gestion Admin';
-  return 'Espace d’administration';
+    if (roles.value.includes('Super-admin')) return 'Gestion Super Admin';
+    if (roles.value.includes('Admin'))       return 'Gestion Admin';
+    return 'Espace d’administration';
 });
 
 
 /* ########## CHANGER UN ROLE ##################################################################################*/
-const isSuperAdmin = () => nowConnectUser.role === 'Super-admin'; //déclartion de la variable que si le user connecté a le role de super-admin
+
+const roles = computed(() => page.props.auth.user?.roles || []);
+
+const isSuperAdmin = () => roles.value.includes('Super-admin');
+const isAdmin = () => roles.value.includes('Admin') || roles.value.includes('Super-admin');
 
 const updateRole = (user, event) => {
+    if (!isSuperAdmin()) return;           // ← bloque toute action si pas Super-admin
     if (user.cannot_edit_role) return;
 
     const newRole = event.target.value;
     if (!confirm(`Attribuer le rôle "${newRole}" à ${user.pseudo} ?`)) return;
-    router.post(route('users.updateRole', user.id), {role: newRole}, {preserveScroll: true});
+    router.post(route('users.updateRole', { user: user.id }), { role: newRole }, { preserveScroll: true });
 };
+
 
 /* ########## BARRE DE RECHERCHE ############################################################################*/
 /** escapeHtml ==> But : Protège des injections HTML (XSS) quand on insère du HTML à la main (v-html)*/
@@ -232,13 +239,21 @@ const sortedUsers = computed(() => {
 });
 
 const filteredUsers = computed(() => {
-    const query = searchUser.value.toLowerCase();
-    return sortedUsers.value.filter(user =>
-        user.pseudo.toLowerCase().includes(query) ||
-        user.first_name.toLowerCase().includes(query) ||
-        user.last_name.toLowerCase().includes(query) ||
-        user.email.toLowerCase().includes(query)
-    );
+    const query = (searchUser.value || '').toLowerCase();
+
+    return sortedUsers.value.filter(user => {
+        const pseudo = (user.pseudo || '').toLowerCase();
+        const first  = (user.first_name || '').toLowerCase();
+        const last   = (user.last_name || '').toLowerCase();
+        const email  = (user.email || '').toLowerCase();
+
+        return (
+            pseudo.includes(query) ||
+            first.includes(query)  ||
+            last.includes(query)   ||
+            email.includes(query)
+        );
+    });
 });
 
 /* ########## TRIER/FILTRER LE TABLEAU EVENTS ###############################################################*/
@@ -284,14 +299,14 @@ const prioritizedEvents = computed(() => {
 const toggleActivation = (user) => {
     if (user.anonyme || user.roles.some(r => r.name === 'Super-admin')) return;
     if (!confirm(`Voulez-vous ${user.is_actif ? 'désactiver' : 'activer'} ${user.pseudo} ?`)) return;
-    router.post(route('users.toggleActivation', user.id), {}, {preserveScroll: true});
+    router.post(route('users.toggleActivation', { user: user.id }), {}, {preserveScroll: true});
 };
 
 /* ########## ANOMYSER UN USER #############################################################################*/
 const anonymizeUser = (user) => {
     if ((user.is_super_admin) || (user.anonyme)) return;
     if (!confirm(`Voulez-vous anonymiser ${user.pseudo} ?`)) return;
-    router.post(route('users.anonymize', user.id), {}, {preserveScroll: true});
+    router.post(route('users.anonymize', { user: user.id }), {}, {preserveScroll: true});
 };
 
 /* ########## ACTIVER/DESACTIVER UN EVENT ##################################################################*/
@@ -300,7 +315,7 @@ const toggleEventActivation = (event) => {
         return;
     }
 
-    router.post(route('events.toggleActive', event.id), {}, {
+    router.post(route('events.toggleActive', { event: event.id }), {}, {
         preserveScroll: true,
         onSuccess: () => {
             // Mettre à jour l'état local
@@ -316,7 +331,7 @@ const toggleEventActivation = (event) => {
 /* ########## VALIDER/REFUSER UN EVENT #######################################################################*/
 const acceptEvent = (event) => {
     if (!confirm(`Accepter l'événement "${event.name_event}" ?`)) return;
-    router.post(route('events.accept', event.id), {}, {
+    router.post(route('events.accept', { event: event.id }), {}, {
         preserveScroll: true,
         onSuccess: () => router.visit(route('admin.index'), {preserveScroll: true, preserveState: false}),
         onError: () => alert('Erreur lors de l\'acceptation.')
@@ -325,7 +340,7 @@ const acceptEvent = (event) => {
 
 const refuseEvent = (event) => {
     if (!confirm(`Refuser l'événement "${event.name_event}" ?`)) return;
-    router.post(route('events.refuse', event.id), {}, {
+    router.post(route('events.refuse', { event: event.id }), {}, {
         preserveScroll: true,
         onSuccess: () => router.visit(route('admin.index')),
         onError: () => alert('Erreur lors du refus.')
@@ -350,7 +365,7 @@ const seedUsers = () => {
 const clearEventReports = (event) => {
     if (!confirm(`Remettre à zéro les signalements pour "${event.name_event}" ?`)) return;
 
-    router.post(route('events.reports.clear', event.id), {}, {
+    router.post(route('events.reports.clear', { event: event.id }), {}, {
         preserveScroll: true,
         onSuccess: () => {
             // MAJ optimiste de l’UI
@@ -396,10 +411,11 @@ const clearEventReports = (event) => {
                                     <li>Utilisez les barres de recherche pour filtrer.</li>
                                     <li>Cliquez sur un <strong>Pseudo</strong> pour ouvrir le profil.</li>
                                     <li>Cliquez sur les <strong>en-têtes</strong> <strong>Pseudo / Nom / Email</strong> pour trier.</li>
-                                    <li>
-                                        Les boutons permettent d’activer/désactiver
-                                        <template v-if="isSuperAdmin()">, anonymiser</template>
-                                        ou changer un rôle.
+                                    <li v-if="isSuperAdmin()">
+                                        Les boutons permettent d’activer/désactiver, anonymiser et <strong>changer un rôle</strong>.
+                                    </li>
+                                    <li v-else>
+                                        Les boutons permettent d’activer/désactiver. <strong>Seul un Super-admin peut changer les rôles.</strong>
                                     </li>
 
                                     <!-- Bloc réservé Super-admin -->
@@ -497,7 +513,7 @@ const clearEventReports = (event) => {
                                         </th>
 
                                         <!-- title statut -->
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                        <th  class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Statut
                                         </th>
 
@@ -521,7 +537,7 @@ const clearEventReports = (event) => {
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <i class="fa-solid fa-user text-[#59c4b4]" aria-hidden="true"></i>&nbsp;
                                             <Link
-                                                :href="route('users.show', user.id)"
+                                                :href="route('users.show', { user: user.pseudo })"
                                             class="font-medium text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                                             >
                                             <span v-html="highlight(user.pseudo, searchUser)"></span>
@@ -556,23 +572,28 @@ const clearEventReports = (event) => {
 
                                         <!-- value role user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <select
-                                                :value="user.role_name"
-                                                @change="updateRole(user, $event)"
-                                                :disabled="user.cannot_edit_role"
-                                                class="text-sm rounded-full px-3 py-1 font-medium border-0 focus:ring-2 focus:ring-[#59c4b4]
-                                                 disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-                                                                                        :class="{
-                                            'bg-red-100 text-red-800': user.is_super_admin,
-                                            'bg-blue-100 text-blue-800': !user.is_super_admin && user.role_name === 'Admin',
-                                            'bg-green-100 text-green-800': user.role_name === 'User'
-  }"
-                                            >
-                                                <option value="User">User</option>
-                                                <option value="Admin">Admin</option>
-                                                <option value="Super-admin" v-if="isSuperAdmin()">Super-admin</option>
-                                            </select>
-
+                                            <template v-if="isSuperAdmin()">
+                                                <select
+                                                    :value="user.role_name"
+                                                    @change="updateRole(user, $event)"
+                                                    :disabled="user.cannot_edit_role"
+                                                    class="text-sm rounded-full px-3 py-1 font-medium border-0 focus:ring-2 focus:ring-[#59c4b4]"
+                                                    :class="{
+        'bg-red-100 text-red-800': user.is_super_admin,
+        'bg-blue-100 text-blue-800': !user.is_super_admin && user.role_name === 'Admin',
+        'bg-green-100 text-green-800': user.role_name === 'User'
+      }"
+                                                >
+                                                    <option value="User">User</option>
+                                                    <option value="Admin">Admin</option>
+                                                    <option value="Super-admin">Super-admin</option>
+                                                </select>
+                                            </template>
+                                            <template v-else>
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+      {{ user.role_name }}
+    </span>
+                                            </template>
                                         </td>
 
                                         <!-- value action user -->
@@ -796,7 +817,7 @@ const clearEventReports = (event) => {
     <!-- Option: lien vers le profil du créateur -->
 
     <Link v-if="event.creator"
-          :href="route('users.show', event.creator.id)"
+          :href="route('users.show', { user: event.creator.pseudo })"
           class="hover:underline">
       {{ event.creator.pseudo }}
     </Link>

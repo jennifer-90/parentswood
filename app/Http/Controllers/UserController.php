@@ -8,6 +8,11 @@ use App\Models\Role;
 use App\Models\Event;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Redirect;
+use Inertia\Response;
+use Illuminate\Support\Facades\Mail;
 
 
 
@@ -62,10 +67,10 @@ class UserController extends Controller
                 $isOlderSuperAdmin  = $isTargetSuperAdmin && $user->created_at->lt($me->created_at);
 
                 if ($me->hasRole('Super-admin')) {
+                    // Super-admin : peut éditer sauf soi-même, anonymes, et super-admin plus ancien
                     $cannotEdit = $isSelf || $user->anonyme || $isOlderSuperAdmin;
-                } elseif ($me->hasRole('Admin')) {
-                    $cannotEdit = $isSelf || $user->anonyme || $isTargetSuperAdmin;
                 } else {
+                    // Admin (et tous les autres) : JAMAIS d’édition de rôles
                     $cannotEdit = true;
                 }
 
@@ -153,6 +158,24 @@ class UserController extends Controller
             abort(404);
         }
 
+        $me = auth()->user();
+
+        if ($me && $me->id !== $user->id) {
+
+            // 1) Si la personne visitée m'a bloqué → je ne peux pas voir (sauf staff)
+            if ($user->hasBlocked($me) && ! $me->hasAnyRole(['Admin','Super-admin'])) {
+                abort(403, "Vous ne pouvez pas voir ce profil.");
+            }
+
+            // 2) Si MOI j'ai bloqué la personne visitée :
+            //    - non-staff : on masque aussi (symétrique)
+            //    - staff : on laisse voir (asymétrique pour Admin/Super-admin)
+            if ($me->hasBlocked($user) && ! $me->hasAnyRole(['Admin','Super-admin'])) {
+                abort(403, "Vous ne pouvez pas voir ce profil.");
+            }
+        }
+
+
         // Compteurs simples
         $eventsCreatedCount  = Event::where('created_by', $user->id)->count();
         $eventsAttendedCount = $user->eventsParticipated()->count();
@@ -164,7 +187,7 @@ class UserController extends Controller
 
         // === Participations à venir ===
         $upcomingEvents = $user->eventsParticipated()
-            ->where('inactif', false)
+            ->where('events.inactif', false)
             ->where(function ($q) use ($today, $nowTime) {
                 $q->whereDate('date', '>', $today)
                     ->orWhere(function ($q) use ($today, $nowTime) {
@@ -190,7 +213,7 @@ class UserController extends Controller
 
         // === Participations passées ===
         $pastEvents = $user->eventsParticipated()
-            ->where('inactif', false)
+            ->where('events.inactif', false)
             ->where(function ($q) use ($today, $nowTime) {
                 $q->whereDate('date', '<', $today)
                     ->orWhere(function ($q) use ($today, $nowTime) {
@@ -222,6 +245,9 @@ class UserController extends Controller
         return Inertia::render('UsersShow', [
             'user' => [
                 ...$user->toArray(),
+
+                'i_blocked'  => $me ? $me->hasBlocked($user) : false,   // moi → lui
+                'blocked_me' => $me ? $user->hasBlocked($me) : false,   // lui → moi
 
                 // Tes clés historiques
                 'events_created'       => $eventsCreatedCount,
@@ -273,7 +299,7 @@ class UserController extends Controller
         }
 
         if ($user->hasAnyRole(['Admin','Super-admin']) || $user->anonyme) {
-            return back()->with('error', "Impossible de modifier cet utilisateur.");
+            return back()->with('flash', ['error' => "Impossible de modifier cet utilisateur."]);
         }
 
         $user->update([
@@ -319,60 +345,35 @@ class UserController extends Controller
     {
         $authUser = auth()->user();
 
-        // ====== Branche ADMIN ======
-        if ($authUser->hasRole('Admin')) {
-            if ($user->id === $authUser->id) {
-                return back()->with('flash', ['error' => 'Tu ne peux pas modifier ton propre rôle.']);
-            }
-            if ($user->hasRole('Super-admin')) {
-                return back()->with('flash', ['error' => 'Action non autorisée.']);
-            }
+        // Uniquement Super-admin
+        abort_unless($authUser->hasRole('Super-admin'), 403, 'Action non autorisée.');
 
-            // Admin ne peut définir que User|Admin
-            $validated = $request->validate([
-                'role' => ['required', 'in:User,Admin'],
-            ]);
-
-            $role = Role::where('name', $validated['role'])->first();
-            if (!$role) {
-                return back()->with('flash', ['error' => 'Rôle invalide.']);
-            }
-
-            $user->roles()->sync([$role->id]);
-            return back()->with('flash', ['success' => 'Rôle mis à jour.']);
+        // Pas soi-même
+        if ($user->id === $authUser->id) {
+            return back()->with('flash', ['error' => 'Tu ne peux pas modifier ton propre rôle.']);
         }
 
-        // ====== Branche SUPER-ADMIN ======
-        if ($authUser->hasRole('Super-admin')) {
-            if ($user->id === $authUser->id) {
-                return back()->with('flash', ['error' => 'Tu ne peux pas modifier ton propre rôle.']);
-            }
+        // Validation
+        $validated = $request->validate([
+            'role' => ['required', 'in:User,Admin,Super-admin'],
+        ]);
 
-            $validated = $request->validate([
-                'role' => ['required', 'in:User,Admin,Super-admin'],
-            ]);
-
-            // Règle “super-admin plus ancien”
-            if (
-                $user->hasRole('Super-admin') &&
-                $validated['role'] !== 'Super-admin' &&
-                $user->created_at < $authUser->created_at
-            ) {
-                return back()->with('flash', ['error' => 'Impossible de modifier un Super-admin plus ancien.']);
-            }
-
-            $role = Role::where('name', $validated['role'])->first();
-            if (!$role) {
-                return back()->with('flash', ['error' => 'Rôle invalide.']);
-            }
-
-            $user->roles()->sync([$role->id]);
-            return back()->with('flash', ['success' => 'Rôle mis à jour.']);
+        // Règle “super-admin plus ancien”
+        if (
+            $user->hasRole('Super-admin') &&
+            $validated['role'] !== 'Super-admin' &&
+            $user->created_at < $authUser->created_at
+        ) {
+            return back()->with('flash', ['error' => 'Impossible de modifier un Super-admin plus ancien.']);
         }
 
-        // Tous les autres rôles
-        return back()->with('flash', ['error' => 'Action non autorisée.']);
+        $role = Role::where('name', $validated['role'])->firstOrFail();
+
+        $user->roles()->sync([$role->id]);
+
+        return back()->with('flash', ['success' => 'Rôle mis à jour.']);
     }
+
 
 
 // UserController.php
@@ -451,6 +452,109 @@ class UserController extends Controller
 
         return back()->with('flash', ['success' => "{$count} utilisateurs de test créés."]);
     }
+
+
+    public function block(User $user): RedirectResponse
+    {
+        $me = auth()->user();
+
+        abort_if($me->id === $user->id, 403, "Vous ne pouvez pas vous bloquer vous-même.");
+
+        // Bloquer si pas déjà bloqué
+        if (! method_exists($me, 'hasBlocked') || ! $me->hasBlocked($user)) {
+            $me->blocks()->syncWithoutDetaching([$user->id]);
+        }
+
+        return redirect()
+            ->route('dashboard')
+            ->with('success', "L’utilisateur « " . ($user->pseudo ?? $user->name ?? 'utilisateur') . " » a été bloqué.");
+    }
+
+    public function unblock(User $user): RedirectResponse
+    {
+        $me = auth()->user();
+
+        $me->blocks()->detach($user->id);
+
+        return redirect()
+            ->route('dashboard')
+            ->with('success', "L’utilisateur « " . ($user->pseudo ?? $user->name ?? 'utilisateur') . " » a été débloqué.");
+    }
+
+
+// (Optionnel) Page listant mes utilisateurs bloqués
+    public function blockedList(): Response
+    {
+        $me = auth()->user();
+
+        $blocked = $me->blocks()
+            ->select('users.id', 'users.pseudo', 'users.first_name', 'users.last_name', 'users.picture_profil')
+            ->get()
+            ->map(fn ($u) => [
+                'id'                  => $u->id,
+                'pseudo'              => $u->pseudo,
+                'first_name'          => $u->first_name,
+                'last_name'           => $u->last_name,
+                'picture_profil_url'  => $u->picture_profil_url, // ton accessor existant
+            ]);
+
+        return Inertia::render('Blocked/Index', [
+            'blocked' => $blocked,
+        ]);
+    }
+
+    public function sendAdminMessage(Request $request): RedirectResponse
+    {
+        $me = $request->user();
+
+        // ⚠️ validation
+        $data = $request->validate([
+            'role'    => ['required', 'in:Admin,Super-admin'],
+            'subject' => ['required', 'string', 'max:255'],
+            'message' => ['required', 'string', 'min:10'],
+        ], [], [
+            'role'    => 'destinataire',
+            'subject' => 'sujet',
+            'message' => 'message',
+        ]);
+
+        // ⚠️ récupération des destinataires par rôle (Spatie laravel-permission)
+        $recipients = User::role($data['role'])
+            ->whereNotNull('email')
+            ->pluck('email')
+            ->unique()
+            ->values()
+            ->all();
+
+        abort_if(empty($recipients), 404, "Aucun {$data['role']} n’a d’adresse email configurée.");
+
+        // ⚠️ contenu HTML inline (pas de Blade / Mailable)
+        $html = sprintf(
+            '<h2 style="margin:0 0 12px">Nouveau message support</h2>
+             <p><strong>De :</strong> %s (%s)</p>
+             <p><strong>Sujet :</strong> %s</p>
+             <hr>
+             <pre style="white-space:pre-wrap;font-family:inherit">%s</pre>',
+            e($me->name ?? $me->pseudo ?? ('User #'.$me->id)),
+            e($me->email),
+            e($data['subject']),
+            e($data['message'])
+        );
+
+        // ⚠️ envoi
+        Mail::html($html, function ($message) use ($recipients, $me, $data) {
+            $message->to($recipients)
+                ->replyTo($me->email, $me->name ?? $me->pseudo ?? 'Utilisateur')
+                ->subject('[Support] '.$data['subject']);
+        });
+
+        return back()->with('success', 'Votre message a été envoyé à l’équipe.');
+    }
+
+
+
+
+
 
 
 }

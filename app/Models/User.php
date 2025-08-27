@@ -6,10 +6,13 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Role;
+use Illuminate\Support\Facades\Storage;
+
 
 class User extends Authenticatable
 {
     use HasFactory, Notifiable;
+
 
     protected $fillable = [
         'pseudo',
@@ -38,6 +41,18 @@ class User extends Authenticatable
         'is_actif' => 'boolean',
         'anonyme' => 'boolean',
     ];
+
+
+
+
+    protected $appends = ['picture_profil_url'];
+
+    public function getPictureProfilUrlAttribute(): ?string
+    {
+        return $this->picture_profil
+            ? Storage::url($this->picture_profil)
+            : null;
+    }
 
     /**
      * Relation avec les rôles (relation plusieurs à plusieurs).
@@ -121,7 +136,7 @@ class User extends Authenticatable
      */
     public function eventsCreated()
     {
-        return $this->hasMany(Event::class, 'user_id');
+        return $this->hasMany(Event::class, 'created_by');
     }
 
     public function events()
@@ -129,11 +144,38 @@ class User extends Authenticatable
         return $this->hasMany(Event::class);
     }
 
-    public function participatingEvents()
+
+    // Les personnes que JE bloque
+    public function blocks()
     {
-        return $this->belongsToMany(Event::class, 'event_participants')
-            ->withTimestamps()
-            ->withPivot('status');
+        return $this->belongsToMany(User::class, 'blocked_users', 'user1_id', 'user2_id')
+            ->withTimestamps();
     }
+
+// Les personnes qui ME bloquent
+    public function blockedBy()
+    {
+        return $this->belongsToMany(User::class, 'blocked_users', 'user2_id', 'user1_id')
+            ->withTimestamps();
+    }
+
+    public function hasBlocked(User $other): bool
+    {
+        return $this->blocks()->where('users.id', $other->id)->exists();
+    }
+
+    public function isBlockedBy(User $other): bool
+    {
+        return $this->blockedBy()->where('users.id', $other->id)->exists();
+    }
+
+
+    public function getRouteKeyName(): string
+    {
+        return 'pseudo';
+    }
+
+
+
 
 }

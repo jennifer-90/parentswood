@@ -19,6 +19,7 @@
         "vue": "^3.5.18"
     },
     "dependencies": {
+        "@fortawesome/fontawesome-free": "^7.0.0",
         "@fullcalendar/common": "^5.11.5",
         "@fullcalendar/core": "^6.1.15",
         "@fullcalendar/daygrid": "^6.1.15",

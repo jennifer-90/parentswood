@@ -1,163 +1,194 @@
+<!-- resources/js/Pages/Profile/Partials/DeactivateAccountCard.vue -->
 <script setup>
-import DangerButton from '@/Components/DangerButton.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import Modal from '@/Components/Modal.vue';
-import SecondaryButton from '@/Components/SecondaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
-import { useForm } from '@inertiajs/vue3';
-import { nextTick, ref } from 'vue';
+import { ref, computed } from 'vue'
+import { useForm } from '@inertiajs/vue3'
+import InputLabel from '@/Components/InputLabel.vue'
+import TextInput from '@/Components/TextInput.vue'
+import InputError from '@/Components/InputError.vue'
 
-const confirmingUserDeletion = ref(false);
-const passwordInput = ref(null);
+const showModal = ref(false)
+const confirmChecked = ref(false)
 
+// On garde le design + UX ; l’action backend sera branchée après (route PATCH par ex. profile.deactivate)
 const form = useForm({
-    password: '',
-    terms: false,
-});
+    password: '', // vérification côté serveur (design inclus ici)
+})
 
-const confirmUserDeletion = () => {
-    confirmingUserDeletion.value = true;
-    nextTick(() => passwordInput.value.focus());
-};
+// Bouton principal -> ouvre la modal
+const openModal = () => {
+    showModal.value = true
+    confirmChecked.value = false
+    form.reset('password')
+    form.clearErrors()
+}
 
-const deleteUser = () => {
-    form.delete(route('profile.destroy'), {
-        preserveScroll: true,
-        preserveState: true,
-        onSuccess: () => closeModal(),
-        onError: () => passwordInput.value.focus(),
-        onFinish: () => form.reset(),
-    });
-};
-
+// Ferme la modal
 const closeModal = () => {
-    confirmingUserDeletion.value = false;
-    form.reset();
-    form.clearErrors();
-};
+    showModal.value = false
+}
+
+// Bouton "Confirmer" (ici on ne fait que montrer le design).
+// Quand tu seras prêt, remplace le commentaire par :
+// form.patch(route('profile.deactivate'), { ... })
+const submit = () => {
+    if (!canConfirm.value || form.processing) return
+    form.patch(route('profile.deactivate'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            showModal.value = false
+            form.reset()
+        },
+        onError: () => {
+            // On laisse la modale ouverte pour afficher form.errors.password
+        },
+    })
+}
+
+// Activation du bouton confirmer
+const canConfirm = computed(() => confirmChecked.value && form.password.trim().length > 0 && !form.processing)
 </script>
 
 <template>
-    <section class="space-y-6">
-        <div class="border-l-4 border-red-500 bg-red-50 p-4 rounded-r-md">
-            <div class="flex">
-                <div class="flex-shrink-0">
-                    <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-                    </svg>
+    <section class="danger-zone mt-8">
+        <!-- Bandeau d’avertissement -->
+        <div class="rounded-lg border border-red-200 bg-red-50 p-4 mb-4">
+            <div class="flex items-start gap-3">
+                <div class="shrink-0">
+          <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-100 text-red-600">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </span>
                 </div>
-                <div class="ml-3">
-                    <h3 class="text-sm font-medium text-red-800">
-                        Zone dangereuse
-                    </h3>
-                    <div class="mt-2 text-sm text-red-700">
-                        <p>
-                            Une fois votre compte supprimé, toutes ses données seront définitivement effacées.
-                            Avant de continuer, téléchargez les informations que vous souhaitez conserver.
-                        </p>
-                    </div>
+                <div class="text-red-800">
+                    <h3 class="font-semibold">Zone dangereuse</h3>
+                    <ul class="mt-1 text-sm space-y-1">
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-circle-small mt-1 text-red-400"></i>
+                            <span>Mettre votre compte <strong>inactif</strong> masquera votre profil et vos activités aux autres utilisateurs.</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-circle-small mt-1 text-red-400"></i>
+                            <span>Vos données restent conservées afin de pouvoir <strong>réactiver</strong> votre compte plus tard.</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fa-solid fa-circle-small mt-1 text-red-400"></i>
+                            <span>Vous ne recevrez plus de notifications et vous ne pourrez plus participer aux événements tant que le compte est inactif.</span>
+                        </li>
+                    </ul>
                 </div>
-            </div>
-
-            <div class="mt-4">
-                <DangerButton @click="confirmUserDeletion" class="flex items-center">
-                    <svg class="-ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Supprimer mon compte
-                </DangerButton>
             </div>
         </div>
 
-        <!-- Confirmation Modal -->
-        <Modal :show="confirmingUserDeletion" @close="closeModal">
-            <div class="p-6">
-                <div class="flex items-center">
-                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                        <svg class="h-6 w-6 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                    </div>
-                    <h3 class="ml-3 text-lg leading-6 font-medium text-gray-900">
-                        Supprimer définitivement votre compte
-                    </h3>
-                </div>
-
-                <div class="mt-4">
-                    <p class="text-sm text-gray-600">
-                        Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible. Toutes vos données seront définitivement supprimées.
-                        Veuillez entrer votre mot de passe pour confirmer que vous souhaitez supprimer définitivement votre compte.
+        <!-- Carte action -->
+        <div class="rounded-lg border border-red-200 bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between gap-4 flex-col sm:flex-row">
+                <div class="text-center sm:text-left">
+                    <h4 class="text-red-700 font-semibold flex items-center justify-center sm:justify-start gap-2">
+                        <i class="fa-solid fa-user-slash"></i> Désactiver mon compte
+                    </h4>
+                    <p class="text-sm text-gray-600 mt-1">
+                        Votre compte sera rendu <strong>inactif</strong>. Vous pourrez le réactiver ultérieurement en vous reconnectant
+                        (ou via le support).
                     </p>
-
-                    <div class="mt-4">
-                        <InputLabel for="password" value="Mot de passe" />
-                        <TextInput
-                            id="password"
-                            ref="passwordInput"
-                            v-model="form.password"
-                            type="password"
-                            class="mt-1 block w-full"
-                            placeholder="Entrez votre mot de passe"
-                            @keyup.enter="deleteUser"
-                        />
-                        <InputError :message="form.errors.password" class="mt-2" />
-                    </div>
-
-                    <div class="mt-4 flex items-start">
-                        <div class="flex items-center h-5">
-                            <input
-                                id="terms"
-                                v-model="form.terms"
-                                type="checkbox"
-                                class="focus:ring-red-500 h-4 w-4 text-red-600 border-gray-300 rounded"
-                            />
-                        </div>
-                        <div class="ml-3 text-sm">
-                            <label for="terms" class="font-medium text-gray-700">
-                                Je comprends que cette action est irréversible et que toutes mes données seront supprimées.
-                            </label>
-                        </div>
-                    </div>
-                    <InputError :message="form.errors.terms" class="mt-2" />
                 </div>
 
-                <div class="mt-6 flex justify-end space-x-3">
-                    <SecondaryButton @click="closeModal">
-                        Annuler
-                    </SecondaryButton>
+                <button
+                    type="button"
+                    @click="openModal"
+                    class="inline-flex items-center justify-center rounded-lg px-4 py-2.5 font-semibold text-white
+                 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700
+                 shadow-sm hover:shadow-md transition"
+                >
+                    <i class="fa-solid fa-ban mr-2"></i>
+                    Désactiver le compte
+                </button>
+            </div>
+        </div>
 
-                    <DangerButton
-                        :class="{ 'opacity-25': form.processing }"
-                        :disabled="!form.terms || form.processing"
-                        class="flex items-center"
-                        @click="deleteUser"
-                    >
-                        <svg v-if="form.processing" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span v-if="!form.processing">Supprimer mon compte</span>
-                        <span v-else>Suppression en cours...</span>
-                    </DangerButton>
+        <!-- Modal de confirmation -->
+        <div v-if="showModal" class="fixed inset-0 z-50">
+            <!-- Overlay -->
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeModal"></div>
+
+            <!-- Dialog -->
+            <div
+                class="absolute inset-0 flex items-center justify-center p-4"
+                role="dialog" aria-modal="true" aria-labelledby="deactivate-title"
+            >
+                <div class="w-full max-w-lg rounded-xl bg-white shadow-xl">
+                    <div class="px-5 py-4 border-b border-gray-100">
+                        <h3 id="deactivate-title" class="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <i class="fa-solid fa-exclamation"></i>
+              </span>
+                            Confirmer la désactivation
+                        </h3>
+                    </div>
+
+                    <div class="px-5 pt-4 pb-2 space-y-4">
+                        <p class="text-sm text-gray-700">
+                            Pour confirmer, veuillez <strong>cocher</strong> la case ci-dessous et entrer votre
+                            <strong>mot de passe actuel</strong>.
+                        </p>
+
+                        <!-- Checkbox -->
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" class="mt-1 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-400"
+                                   v-model="confirmChecked" />
+                            <span class="text-sm text-gray-700">
+                Je comprends que mon compte sera mis <strong>inactif</strong> et qu’il ne sera plus visible sur la plateforme.
+              </span>
+                        </label>
+
+                        <!-- Password -->
+                        <div class="space-y-1">
+                            <InputLabel for="deactivate_password" value="Mot de passe actuel" />
+                            <TextInput
+                                id="deactivate_password"
+                                v-model="form.password"
+                                type="password"
+                                class="w-full"
+                                placeholder="••••••••"
+                                autocomplete="current-password"
+                                :class="{ 'border-red-300': form.errors.password }"
+                            />
+                            <InputError :message="form.errors.password" />
+                        </div>
+                    </div>
+
+                    <div class="px-5 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
+                        <button
+                            type="button"
+                            @click="closeModal"
+                            class="px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                            :disabled="form.processing"
+                        >
+                            Annuler
+                        </button>
+
+                        <button
+                            type="button"
+                            @click="submit"
+                            :disabled="!canConfirm || form.processing"
+                            class="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-semibold text-white
+                             disabled:opacity-50 disabled:cursor-not-allowed
+                             bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700
+                             shadow-sm hover:shadow-md transition"
+                            :aria-busy="form.processing ? 'true' : 'false'"
+                        >
+                            <svg v-if="form.processing" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                            <span>{{ form.processing ? 'Traitement…' : 'Confirmer la désactivation' }}</span>
+                        </button>
+
+                    </div>
                 </div>
             </div>
-        </Modal>
+        </div>
     </section>
 </template>
 
 <style scoped>
-/* Animation pour le bouton de suppression */
-@keyframes pulse {
-    0%, 100% {
-        transform: scale(1);
-    }
-    50% {
-        transform: scale(1.05);
-    }
-}
-
-.animate-pulse-once {
-    animation: pulse 0.5s ease-in-out;
-}
+.danger-zone :is(button, a, input, textarea) { transition: all .2s ease; }
 </style>

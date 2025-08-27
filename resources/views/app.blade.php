@@ -4,17 +4,8 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="path/to/font-awesome/css/font-awesome.min.css">
-        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-
-        <link
-            rel="stylesheet"
-            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
-            integrity="sha512-TwA5J0itvV23I1Zmc8AkhI+NsZ6Nc8+2bLGdMS0wRMq+RLQ3TD+v8B2V2hU4wXxJg/nKcZ35mxmtMSu3CeFZ6A=="
-            crossorigin="anonymous"
-            referrerpolicy="no-referrer"
-        />
+        <!-- <link rel="stylesheet" href="path/to/font-awesome/css/font-awesome.min.css"> -->
+        <script src="https://cdn.plot.ly/plotly-2.27.1.min.js"></script>
 
         <title inertia>{{ config('app.name', 'Laravel') }}</title>
 

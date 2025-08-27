@@ -1,8 +1,42 @@
+<script setup>
+import { ref, computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
+import Dropdown from '@/Components/Dropdown.vue';
+import DropdownLink from '@/Components/DropdownLink.vue';
+import NavLink from '@/Components/NavLink.vue';
+import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
+import Footer from '@/Components/Footer.vue'
+import Flash from '@/Components/Flash.vue'
+
+const page = usePage();
+
+const showingNavigationDropdown = ref(false);
+
+/*==============================================================================*/
+// Rôles & helpers
+const roles = computed(() => page.props.auth?.user?.roles || []);
+const isAdmin = () => {
+    const r = roles.value || [];
+    return r.includes('Admin') || r.includes('Super-admin');
+};
+const adminLabel = () => {
+    const r = roles.value || [];
+    if (r.includes('Super-admin')) return 'Super-Admin';
+    if (r.includes('Admin')) return 'Admin';
+    return '';
+};
+/*==============================================================================*/
+
+const avatarUrl = computed(
+    () => page.props.auth?.user?.picture_profil_url || '/images/default-avatar.png'
+);
+</script>
+
 <template>
     <div>
-        <div v-if="$page.props.flash && $page.props.flash.error"
-             class="bg-red-100 text-red-700 p-4 text-center font-medium">
-            {{ $page.props.flash.error }}
+        <!-- Flash global -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+            <Flash />
         </div>
 
         <div class="min-h-screen bg-gray-50">
@@ -54,12 +88,13 @@
                                 </NavLink>
 
                                 <NavLink
-                                    :href="route('users.show', { user: $page.props.auth.user.id })"
-                                    :active="route().current('users.show') && $page.url.includes(`/users/${$page.props.auth.user.id}`)"
-                                    class="hover:text-teal-600 transition-colors"
+                                    v-if="$page.props.auth?.user?.pseudo"
+                                    :href="route('users.show', { user: $page.props.auth.user.pseudo })"
+                                    :active="route().current('users.show') && Number(route().params.user) === Number($page.props.auth.user.pseudo)"
                                 >
                                     <i class="fas fa-user mr-2 w-5 text-center"></i> Mon profil
                                 </NavLink>
+
                             </div>
                         </div>
 
@@ -68,9 +103,14 @@
                             <Dropdown align="right" width="48">
                                 <template #trigger>
                                     <button class="flex items-center space-x-2 text-gray-700 hover:text-teal-600 transition-colors focus:outline-none">
-                                        <div class="h-8 w-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-600">
-                                            <i class="fas fa-user"></i>
-                                        </div>
+                                        <img
+                                            :src="avatarUrl"
+                                            :key="avatarUrl"
+                                            alt="Photo de profil"
+                                            class="h-8 w-8 rounded-full object-cover ring-1 ring-gray-200"
+                                            loading="lazy"
+                                            @error="$event.target.src = '/images/default-avatar.png'"
+                                        />
                                         <span class="font-medium">{{ $page.props.auth.user.pseudo }}</span>
                                         <i class="fas fa-chevron-down text-xs"></i>
                                     </button>
@@ -169,6 +209,15 @@
                         >
                             <i class="fas fa-sign-out-alt mr-3 w-5 text-center"></i> Déconnexion
                         </ResponsiveNavLink>
+
+                        <ResponsiveNavLink
+                            :href="route('users.show', { user: $page.props.auth.user.pseudo })"
+                        :active="route().current('users.show') && route().params.user === $page.props.auth.user.pseudo"
+                        class="flex items-center px-4 py-3"
+                        >
+                        <i class="fas fa-user mr-3 w-5 text-center"></i> Mon profil
+                        </ResponsiveNavLink>
+
                     </div>
                 </div>
             </nav>
@@ -188,47 +237,7 @@
             <Footer />
         </div>
     </div>
-
-
-
 </template>
-
-<script setup>
-import { ref } from 'vue';
-import { usePage, Link } from '@inertiajs/vue3';
-import ApplicationLogo from '@/Components/ApplicationLogo.vue';
-import Dropdown from '@/Components/Dropdown.vue';
-import DropdownLink from '@/Components/DropdownLink.vue';
-import NavLink from '@/Components/NavLink.vue';
-import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
-import Footer from '@/Components/Footer.vue'
-
-const showingNavigationDropdown = ref(false);
-const page = usePage();
-
-const isAdmin = () => {
-    const role = page.props.auth.user?.role;
-    return role === 'Admin' || role === 'Super-admin';
-};
-
-const adminLabel = () => {
-    const role = page.props.auth.user?.role;
-    if (role === 'Super-admin') return 'Super-Admin';
-    if (role === 'Admin') return 'Admin';
-    return '';
-};
-
-// Fonction simple pour formater la date
-const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
-};
-</script>
 
 <style scoped>
 /* Animation pour le menu déroulant */

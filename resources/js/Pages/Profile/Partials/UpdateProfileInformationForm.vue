@@ -1,6 +1,6 @@
 <script setup>
 import { useForm, usePage } from '@inertiajs/vue3'
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import InputLabel from '@/Components/InputLabel.vue'
 import TextInput from '@/Components/TextInput.vue'
 import InputError from '@/Components/InputError.vue'
@@ -8,39 +8,64 @@ import PrimaryButton from '@/Components/PrimaryButton.vue'
 
 const user = usePage().props.auth.user
 
+
+// Petite aide: si on reçoit déjà une URL, on l'utilise.
+// Sinon, si on reçoit un chemin relatif (ex: users/abc.jpg), on préfixe en /storage/.
+// (utile si tu ne redéployes pas tout de suite le middleware)
+const asUrl = (val) => {
+    if (!val) return null
+    if (val.startsWith('http') || val.startsWith('/')) return val
+    return `/storage/${val}`
+}
+
 const form = useForm({
-    first_name: user.first_name,
-    last_name: user.last_name,
-    pseudo: user.pseudo,
-    email: user.email,
+    first_name: user?.first_name ?? '',
+    last_name:  user?.last_name ?? '',
+    pseudo:     user?.pseudo ?? '',
+    email:      user?.email ?? '',
     picture_profil: null,
 })
 
-const preview = ref(
-    user.picture_profil
-        ? `/storage/${user.picture_profil}`
-        : '/images/default-avatar.png'
-)
+
+
+const previewObjectUrl = ref(null)
+const preview = ref(user?.picture_profil_url || asUrl(user?.picture_profil) || '/images/default-avatar.png')
+
 
 function handleFileChange(event) {
-    const file = event.target.files[0]
+    const file = event.target.files?.[0]
     if (!file) return
     form.picture_profil = file
-    preview.value = URL.createObjectURL(file)
+
+    // libère l'ancien objectURL si existant
+    if (previewObjectUrl.value) {
+        URL.revokeObjectURL(previewObjectUrl.value)
+        previewObjectUrl.value = null
+    }
+    previewObjectUrl.value = URL.createObjectURL(file)
+    preview.value = previewObjectUrl.value
 }
 
-function submit() {
-    form.patch(
-        route('profile.update'),
-        {forceFormData: true, //Force l'envoi en Form Data
-            preserveScroll: true, //Empêche le définelment vers le haut après la soumission
-            preserveState: true, //Maintient l'état du composant lors de la navigation
-            onSuccess: () => {} // appelé en cas de succès, exemple : afficher une notif
-        },
-        {
+onBeforeUnmount(() => {
+    if (previewObjectUrl.value) URL.revokeObjectURL(previewObjectUrl.value)
+})
 
-        }
-    )
+
+function submit() {
+    form
+        .transform((data) => ({
+            ...data,
+            _method: 'patch',      // on fait un POST avec override PATCH
+        }))
+        .post(route('profile.update'), {
+            forceFormData: true,   // envoie bien en multipart/form-data
+            preserveScroll: true,
+            onSuccess: () => {
+                const input = document.getElementById('picture_profil')
+                if (input) input.value = ''
+                // form.reset('picture_profil') // optionnel si tu veux aussi vider la valeur côté Inertia
+            },
+        })
 }
 
 
@@ -146,6 +171,7 @@ function submit() {
                         <input
                             type="file"
                             id="picture_profil"
+                            accept="image/jpeg,image/png"
                             class="block w-full text-sm text-gray-500
                                 file:mr-4 file:py-2 file:px-4
                                 file:rounded-md file:border-0

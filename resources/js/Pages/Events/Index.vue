@@ -34,15 +34,21 @@ watch([selectedVille, selectedDate, selectedFilter, selectedInteret], () => {
 
 // --- Affichage "voir plus" des événements passés ---
 const showAllPast = ref(false)
+
+const pastList = computed(() => Array.isArray(props.pastEvents)
+        ? props.pastEvents
+        : (props.pastEvents?.data ?? [])
+        )
+const pastCount = computed(() => pastList.value.length)
 const displayedPastEvents = computed(() =>
-    showAllPast.value ? props.pastEvents : props.pastEvents.slice(0, 4)
-)
-const remainingPastCount = computed(() =>
-    Math.max((props.pastEvents?.length || 0) - 4, 0)
-)
+        showAllPast.value ? pastList.value : pastList.value.slice(0, 4)
+    )
+    const remainingPastCount = computed(() =>
+      Math.max(pastCount.value - 4, 0)
+    )
 
 // Image par défaut
-const defaultImage = '/storage/events/default.png'
+const defaultImage = '/images/default-event.png'
 
 // Réinitialisation des filtres
 const resetFilters = () => {
@@ -55,7 +61,7 @@ const resetFilters = () => {
 
 <template>
     <AuthenticatedLayout>
-        <div class="py-4 bg-[#f9f5f2] min-h-screen">
+        <div class="py-4 bg-[#f9f5f2]">
             <div class="mx-auto w-full px-3 sm:px-5">
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
 
@@ -310,67 +316,53 @@ const resetFilters = () => {
 
 
                     <!-- Section Événements passés -->
-                    <div class="bg-[#59c4b4]/10 p-6 rounded-lg">
-                        <div class="flex items-center justify-between mb-6">
-                            <div class="bg-[#59c4b4] text-white rounded-lg p-3 flex items-center gap-3">
-                                <i class="fa-solid fa-calendar-xmark"></i>
-                                <h2 class="text-lg font-semibold">Événements passés</h2>
-                            </div>
-                            <span class="bg-gray-100 text-gray-800 text-xs font-medium px-2.5 py-0.5 rounded">
-                            {{ pastEvents.length }} événement(s)
-                            </span>
-                        </div>
 
 
-                        <!--empty-->
-                        <div v-if="pastEvents.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+
+
+
+                    <!-- Liste & actions des événements passés -->
+                    <!-- ⚠️ NOUVEAU : on enveloppe le grid + les boutons dans UN SEUL v-if -->
+                    <div v-if="pastCount">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             <Link
                                 v-for="event in displayedPastEvents"
                                 :key="event.id"
                                 :href="route('events.show', event.id)"
                                 class="group bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 border border-gray-100 opacity-80 hover:opacity-100"
                             >
-                                <!-- carte identique à avant -->
                                 <div class="relative h-48 overflow-hidden">
                                     <img
                                         :src="event.picture_event ? '/storage/' + event.picture_event : defaultImage"
                                         :alt="'Image de ' + event.name_event"
                                         class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500 group-hover:scale-105"
                                     />
-                                    <div
-                                        class="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors duration-300"></div>
+                                    <div class="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors duration-300"></div>
                                     <div class="absolute bottom-0 left-0 right-0 p-4">
                                         <p class="text-white font-semibold text-lg truncate">{{ event.name_event }}</p>
                                         <p class="text-white/90 text-sm">📍 {{ event.location }}</p>
                                     </div>
-                                    <div
-                                        class="absolute top-3 right-3 bg-white/90 text-gray-800 text-xs font-medium px-2 py-1 rounded-full">
+                                    <div class="absolute top-3 right-3 bg-white/90 text-gray-800 text-xs font-medium px-2 py-1 rounded-full">
                                         {{
-                                            new Date(event.date).toLocaleDateString('fr-BE', {
-                                                day: 'numeric',
-                                                month: 'short'
-                                            })
+                                            new Date(event.date).toLocaleDateString('fr-BE', { day: 'numeric', month: 'short' })
                                         }}
                                     </div>
                                 </div>
+
                                 <div class="p-4">
                                     <div class="flex items-center text-sm text-gray-500 mb-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none"
-                                             viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
-                                        {{ event.hour.slice(0, 5) }}
+                                        {{ (event.hour || '').slice(0, 5) }} <!-- ⚠️ sécurisation si hour est null -->
                                     </div>
                                     <div class="flex justify-between items-center">
-                                  <span
-                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                    {{ event.participants_count }} participants
-                                  </span>
-                                        <span
-                                            class="text-sm font-medium text-gray-500 group-hover:text-[#59c4b4] group-hover:underline transition-colors">
-                                        Voir détails
-                                      </span>
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+            {{ event.participants_count }} participants
+          </span>
+                                        <span class="text-sm font-medium text-gray-500 group-hover:text-[#59c4b4] group-hover:underline transition-colors">
+            Voir détails
+          </span>
                                     </div>
                                 </div>
                             </Link>
@@ -381,15 +373,15 @@ const resetFilters = () => {
                             <button
                                 @click="showAllPast = true"
                                 class="inline-flex items-center gap-2 bg-gradient-to-r from-[#59c4b4] to-[#4db3a3]
-                                 hover:from-[#4db3a3] hover:to-[#3aa796] text-white px-4 py-2 rounded-lg
-                                 font-medium shadow-sm hover:shadow-md transition-all duration-300"
+             hover:from-[#4db3a3] hover:to-[#3aa796] text-white px-4 py-2 rounded-lg
+             font-medium shadow-sm hover:shadow-md transition-all duration-300"
                             >
                                 Voir la suite ({{ remainingPastCount }})
                             </button>
                         </div>
 
-                        <!-- bouton pour replier -->
-                        <div v-else-if="showAllPast && pastEvents.length > 4" class="mt-4 text-center">
+                        <!-- Bouton Voir moins -->
+                        <div v-else-if="showAllPast && pastCount > 4" class="mt-4 text-center">
                             <button
                                 @click="showAllPast = false"
                                 class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white
@@ -398,19 +390,23 @@ const resetFilters = () => {
                                 Voir moins
                             </button>
                         </div>
-
-                        <!-- Ne s'affiche que si VRAIMENT aucun event -->
-                        <div v-else-if="!pastEvents.length"
-                             class="text-center py-12 bg-white rounded-xl border-2 border-dashed border-gray-200">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-300" fill="none"
-                                 viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                      d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            <h3 class="mt-2 text-lg font-medium text-gray-900">Aucun événement passé</h3>
-                            <p class="mt-1 text-sm text-gray-500">Aucun événement n'a encore eu lieu.</p>
-                        </div>
                     </div>
+
+                    <!-- ⚠️ CHANGEMENT : état vide maintenant en v-else unique (plus de test sur pastEvents.length) -->
+                    <div v-else class="text-center py-12 bg-white rounded-xl border-2 border-dashed border-gray-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <h3 class="mt-2 text-lg font-medium text-gray-900">Aucun événement passé</h3>
+                        <p class="mt-1 text-sm text-gray-500">Aucun événement n'a encore eu lieu.</p>
+                    </div>
+
+
+
+
+
+
+
                 </div>
             </div>
         </div>

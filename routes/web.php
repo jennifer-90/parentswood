@@ -86,7 +86,7 @@ Route::get('/check-pseudo/{pseudo}', function ($pseudo) {
 
 
 // Route Authentification Breeze - Import des routes Breeze (login, register, etc.)
-require __DIR__.'/auth.php';
+//require __DIR__.'/auth.php';
 
 
 // ===========================================================================
@@ -125,7 +125,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::delete('/profile',       [ProfileController::class, 'destroy'])->name('profile.destroy'); // A REVOIR| chanbger en desative
 
     //Profils publics (des autres)
-    Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
+    Route::get('/users/{user:pseudo}', [UserController::class, 'show'])->name('users.show');
 
     //Events — zone utilisateur
     Route::prefix('events')->name('events.')->group(function () {
@@ -168,8 +168,8 @@ Route::middleware(['auth', 'active', 'admin'])->group(function () {
     Route::get('/admin', [UserController::class, 'adminDashboard'])->name('admin.index');
 
     // Bouton active/désactive && changement de role users
-    Route::post('/users/{user}/toggle-activation', [UserController::class, 'toggleActivation'])->name('users.toggleActivation');
-    Route::post('/users/{user}/update-role',       [UserController::class, 'updateRole'])->name('users.updateRole');
+    Route::post('/users/{user:id}/toggle-activation', [UserController::class, 'toggleActivation'])->name('users.toggleActivation');
+    Route::post('/users/{user:id}/update-role',       [UserController::class, 'updateRole'])->name('users.updateRole');
 
     // Exports CSV
     Route::get('/admin/export/users',  [UserController::class, 'exportUsers'])->name('admin.export.users');
@@ -193,9 +193,26 @@ Route::middleware(['auth', 'active', 'admin'])->group(function () {
 // ================================================================================
 
 Route::middleware(['auth', 'active', 'superadmin'])->group(function () {
-    Route::post('/users/{user}/anonymize', [UserController::class, 'anonymize'])->name('users.anonymize');
+    Route::post('/users/{user:id}/anonymize', [UserController::class, 'anonymize'])->name('users.anonymize');
     Route::post('/admin/seed/users',       [UserController::class, 'seedUsers'])->name('admin.seed.users');
 });//### - Fin du middleware : auth + active + superadmin ***
 
 
 
+// Route PATCH protégée par auth
+Route::patch('/profile/deactivate', [\App\Http\Controllers\ProfileController::class, 'deactivateYourself'])
+    ->middleware('auth')
+    ->name('profile.deactivate');
+
+
+Route::middleware('auth')->group(function () {
+    Route::post('/users/{user:id}/block',   [UserController::class, 'block'])->name('users.block');
+    Route::delete('/users/{user:id}/block', [UserController::class, 'unblock'])->name('users.unblock');
+    // (optionnel) liste de mes utilisateurs bloqués
+    Route::get('/me/blocked',            [UserController::class, 'blockedList'])->name('users.blocked');
+});
+
+
+Route::post('/support/contact', [UserController::class, 'sendAdminMessage'])
+    ->middleware(['auth', 'throttle:5,1']) //
+    ->name('users.sendAdminMessage');
