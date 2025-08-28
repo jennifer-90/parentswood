@@ -1,14 +1,6 @@
 <template>
     <GuestLayout>
 
-        <div
-            v-if="page.props.flash.success"
-            class="alert alert-success text-center mx-auto mt-3 w-50 shadow"
-            role="alert"
-        >
-            {{ page.props.flash.success }}
-        </div>
-
         <!-- Hero Section -->
         <div class="container mx-auto px-4 py-16">
             <div class="flex flex-col md:flex-row items-center gap-8">

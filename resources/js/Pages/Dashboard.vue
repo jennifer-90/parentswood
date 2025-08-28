@@ -514,7 +514,7 @@ const submitContact = () => {
                             <div class="flex items-center gap-3">
                                 <Link
                                     v-if="isStaff"
-                                    :href="route('users.show', u.id)"
+                                    :href="route('users.show', u.pseudo)"
                                     class="text-sm text-[#59c4b4] hover:underline"
                                 >
                                     Voir

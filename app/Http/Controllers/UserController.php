@@ -268,8 +268,17 @@ class UserController extends Controller
      */
     public function checkPseudo(Request $request)
     {
-        $exists = User::where('pseudo', $request->pseudo)->exists();
-        return response()->json(['available' => !$exists]);
+        $pseudo = (string) \Illuminate\Support\Str::of($request->query('pseudo', ''))
+            ->trim()
+            ->lower();
+
+        $formatInvalid = !preg_match('/^[a-z0-9]{3,20}$/', $pseudo);
+        if ($formatInvalid) {
+            return response()->json(['available' => false, 'format_invalid' => true]);
+        }
+
+        $exists = User::where('pseudo', $pseudo)->exists();
+        return response()->json(['available' => !$exists, 'format_invalid' => false]);
     }
 
     /**

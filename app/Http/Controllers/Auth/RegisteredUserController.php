@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Support\Str;
 
 class RegisteredUserController extends Controller
 {
@@ -29,29 +30,48 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+
+        $request->merge([
+
+            'last_name'  => trim(preg_replace('/\s+/u', ' ', strip_tags((string) $request->last_name))),
+            'first_name' => trim(preg_replace('/\s+/u', ' ', strip_tags((string) $request->first_name))),
+            'pseudo'     => (string) Str::of($request->input('pseudo', ''))->trim()->lower(),
+            'email'      => (string) Str::of($request->input('email', ''))->trim(),
+        ]);
+
         // Validation des données du formulaire
         $validatedData = $request->validate([
-            'last_name' => ['required', 'regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/', 'max:255'],
-            'first_name' => ['required', 'regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/','max:255'],
-            'pseudo' => 'required|string|max:30|unique:users',
+            'last_name'  => ['required','regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/u','max:50'],
+            'first_name' => ['required','regex:/^[a-zA-ZÀ-ÿ\'\s-]+$/u','max:50'],
+
+            'pseudo' => 'required|string|min:3|max:20|alpha_num|unique:users',
+
             'genre' => 'required|string|in:homme,femme,autre,non_specifie',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ], [
             // Messages d'erreur personnalisés
             'last_name.required' => 'Le champ Nom est obligatoire.',
-            'last_name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
-            'first_name.required' => 'Le champ Prénom est obligatoire.',
-            'first_name.max' => 'Le prénom ne peut pas dépasser 255 caractères.',
+            'last_name.max' => 'Le nom ne peut pas dépasser 50 caractères.',
             'last_name.regex' => 'Le champ Nom contient des caractères invalides.',
+
+            'first_name.required' => 'Le champ Prénom est obligatoire.',
+            'first_name.max' => 'Le prénom ne peut pas dépasser 50 caractères.',
             'first_name.regex' => 'Le champ Prénom contient des caractères invalides.',
+
             'pseudo.required' => 'Le champ Pseudo est obligatoire.',
-            'pseudo.max' => 'Le pseudo ne peut pas dépasser 30 caractères.',
+            'pseudo.min'       => 'Le pseudo doit contenir au moins 3 caractères.',
+            'pseudo.max' => 'Le pseudo ne peut pas dépasser 20 caractères.',
+            'pseudo.alpha_num' => 'Le pseudo ne peut contenir que des lettres et des chiffres (sans espaces ni caractères spéciaux).',
             'pseudo.unique' => 'Ce pseudo est déjà utilisé.',
+
             'genre.required' => 'Le champ Genre est obligatoire.',
             'genre.in' => 'Le genre doit être homme, femme, autre ou non spécifié.',
+
             'email.required' => 'Le champ Email est obligatoire.',
+            'email.email'         => 'Adresse e-mail invalide.',
             'email.unique' => 'Cet email est déjà utilisé.',
+
             'password.required' => 'Le mot de passe est obligatoire.',
             'password.confirmed' => 'Les mots de passe ne correspondent pas.',
         ]);
@@ -69,10 +89,8 @@ class RegisteredUserController extends Controller
 
         // Émission de l'événement Registered
         event(new Registered($user));
-
         // Connexion de l'utilisateur
         Auth::login($user);
-
         // Redirection après inscription
         return redirect()->route('dashboard')->with('success', 'Inscription réussie.');
     }

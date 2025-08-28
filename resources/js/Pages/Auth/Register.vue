@@ -19,41 +19,85 @@ const form = useForm({
     password_confirmation: '',
 });
 
-// Vérification instantanée du pseudo
+
+// --- Check pseudo (AJAX) ---
 const pseudoAvailable = ref(null); // null = non vérifié, true = disponible, false = pris
 const pseudoErrorMessage = ref('');
 let debounceTimeout; // Utilisé pour limiter les requêtes backend
 
-const checkPseudoAvailability = async (pseudo) => {
-    clearTimeout(debounceTimeout);
-    debounceTimeout = setTimeout(async () => {
-        if (!pseudo.trim()) {
-            pseudoAvailable.value = null;
-            pseudoErrorMessage.value = '';
-            return;
-        }
+/* états pour gérer le 429 / cooldown */
+const cooldownRemaining = ref(0);       // secondes restantes
+let   cooldownTimer = null;             // setInterval handler
 
-        try {
-            const response = await axios.get(route('pseudo.check', {pseudo}));
-            pseudoAvailable.value = response.data.available;
-            pseudoErrorMessage.value = pseudoAvailable.value
-                ? 'Ce pseudo est disponible ! 😊'
-                : 'Ce pseudo est déjà pris. 😢';
-        } catch (error) {
-            pseudoAvailable.value = null;
-            pseudoErrorMessage.value = 'Erreur lors de la vérification. Veuillez réessayer.';
+/* lance un cooldown (bloque les checks pendant N secondes) */
+const startCooldown = (seconds) => {
+    const s = Number.isFinite(+seconds) && +seconds > 0 ? +seconds : 60;
+    // stop ancien timer si existant
+    if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+
+    cooldownRemaining.value = s;
+    pseudoAvailable.value = null;
+    pseudoErrorMessage.value = `Trop de tentatives, réessaie dans ${cooldownRemaining.value}s.`;
+
+    cooldownTimer = setInterval(() => {
+        cooldownRemaining.value -= 1;
+        if (cooldownRemaining.value <= 0) {
+            clearInterval(cooldownTimer);
+            cooldownTimer = null;
+            cooldownRemaining.value = 0;
+            // on efface le message à la fin du cooldown
+            pseudoErrorMessage.value = '';
+        } else {
+            // met à jour le message chaque seconde
+            pseudoErrorMessage.value = `Trop de tentatives, réessaie dans ${cooldownRemaining.value}s.`;
         }
-    }, 300); // Attends 300ms après la dernière frappe
+    }, 1000);
 };
 
-// Déclenche la vérification lorsque le pseudo change
 watch(() => form.pseudo, (newPseudo) => {
-    checkPseudoAvailability(newPseudo);
-});
+    clearTimeout(debounceTimeout)
+    debounceTimeout = setTimeout(async () => {
+        const p = (newPseudo ?? '').trim().toLowerCase()
 
-// Validation dynamique
+        // si vide, reset
+        if (!p) {
+            pseudoAvailable.value = null
+            pseudoErrorMessage.value = ''
+            return
+        }
+
+        // on ne spamme pas pendant le cooldown
+        if (cooldownRemaining.value > 0) return
+
+        try {
+            const { data } = await axios.get(route('pseudo.check', { pseudo: p }))
+            if (data.format_invalid) {
+                pseudoAvailable.value = false
+                pseudoErrorMessage.value = 'Le pseudo doit contenir 3–20 caractères, lettres/chiffres uniquement.'
+            } else {
+                pseudoAvailable.value = data.available
+                pseudoErrorMessage.value = data.available
+                    ? 'Ce pseudo est disponible ! 😊'
+                    : 'Ce pseudo est déjà pris. 😢'
+            }
+        } catch (error) {
+            if (error?.response?.status === 429) {
+                const retryAfter = parseInt(error.response.headers?.['retry-after'], 10)
+                startCooldown(retryAfter)
+            } else {
+                pseudoAvailable.value = null
+                pseudoErrorMessage.value = 'Erreur lors de la vérification. Réessayez.'
+            }
+        }
+    }, 300)
+})
+
+
+// --- Petits ✓ nom/prénom ---
 const isLastNameValid = computed(() => form.last_name.trim().length > 0);
 const isFirstNameValid = computed(() => form.first_name.trim().length > 0);
+
+// --- MDP / confirmation ---
 const isPasswordValid = computed(() => {
     const hasMinLength = form.password.length >= 8;
     const hasUpperCase = /[A-Z]/.test(form.password);
@@ -66,7 +110,8 @@ const isPasswordMatch = computed(() => {
     return form.password_confirmation !== '' && form.password === form.password_confirmation;
 });
 
-// Soumission du formulaire
+
+// --- Submit ---
 const submit = () => {
     form.post(route('register'), {
         onError: (errors) => {
@@ -96,7 +141,7 @@ const submit = () => {
                             <span v-if="!isLastNameValid" class="text-red-500 ml-1"> *</span>
                             <span v-if="isLastNameValid" class="text-green-500 ml-1">✓</span>
                         </label>
-                        <TextInput id="last_name" v-model="form.last_name" required autofocus autocomplete="family-name"/>
+                        <TextInput id="last_name" v-model="form.last_name" maxlength=50 required autofocus autocomplete ="family-name"/>
                         <InputError :message="form.errors.last_name"/>
                     </div>
 
@@ -106,14 +151,19 @@ const submit = () => {
                             <span v-if="!isFirstNameValid" class="text-red-500 ml-1"> *</span>
                             <span v-if="isFirstNameValid" class="text-green-500 ml-1">✓</span>
                         </label>
-                        <TextInput id="first_name" v-model="form.first_name" required autocomplete="given-name"/>
+                        <TextInput id="first_name" v-model="form.first_name" maxlength=50  required autocomplete="given-name"/>
                         <InputError :message="form.errors.first_name"/>
                     </div>
 
                     <div> <!-- Pseudo -->
                         <InputLabel for="pseudo" value="Pseudo *"/>
-                        <TextInput id="pseudo" v-model="form.pseudo" required autocomplete="off" placeholder="Choisissez un pseudo"/>
-                        <p v-if="pseudoAvailable !== null" :class="pseudoAvailable ? 'text-green-500' : 'text-red-500'">
+                        <TextInput id="pseudo" v-model="form.pseudo" maxlength=20  required autocomplete="off" placeholder="Choisissez un pseudo"/>
+
+                        <p v-if="cooldownRemaining > 0" class="text-amber-600 mt-1 text-sm">
+                            {{ pseudoErrorMessage }}
+                        </p>
+                        <p v-else-if="pseudoAvailable !== null"
+                           :class="['mt-1 text-sm', pseudoAvailable ? 'text-green-600' : 'text-red-600']">
                             {{ pseudoErrorMessage }}
                         </p>
                         <InputError :message="form.errors.pseudo"/>

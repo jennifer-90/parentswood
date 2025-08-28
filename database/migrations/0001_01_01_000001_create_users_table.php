@@ -27,6 +27,8 @@ return new class extends Migration {
             $table->boolean('privacy_status')->default(1); // page 404 si le status est 0 | user desactivé |ok
             $table->boolean('is_actif')->default(1); // Compte actif |ok
 
+            $table->boolean('self_deactivated')->default(false);
+
             $table->integer('max_create_event')->default(10); // Limite d'événements (!!!)
             $table->boolean('anonyme')->default(0); // Anonymat |ok
 

@@ -21,9 +21,7 @@ use Carbon\Carbon;
 
 // Page d’accueil (redirige vers dashboard si déjà connecté)
 Route::get('/', function () {
-    if (Auth::check()) {
-        return redirect()->route('dashboard');
-    }
+    if (Auth::check()) return redirect()->route('dashboard');
 
     $today   = now()->toDateString();   // "YYYY-MM-DD"
     $nowTime = now()->format('H:i');    // "HH:MM"  << IMPORTANT si ta colonne hour est "HH:MM"
@@ -77,12 +75,14 @@ Route::get('/', function () {
 })->name('home');
 
 
-
 // Vérification de disponibilité d’un pseudo (AJAX public)
-Route::get('/check-pseudo/{pseudo}', function ($pseudo) {
-    $available = ! User::where('pseudo', $pseudo)->exists();
-    return response()->json(['available' => $available]);
-})->name('pseudo.check');
+// Limite d’appels : au max 60 requêtes par minute (par IP/utilisateur) sur /check-pseudo.
+// Si la limite est dépassée, Laravel renvoie 429 "Too Many Requests" + un header "Retry-After"
+// indiquant dans combien de secondes réessayer. Cela n’affecte que cet endpoint.
+Route::get('/check-pseudo', [UserController::class, 'checkPseudo'])
+    ->middleware('throttle:60,1')
+    ->name('pseudo.check');
+
 
 
 // Route Authentification Breeze - Import des routes Breeze (login, register, etc.)
@@ -118,14 +118,23 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     //Profil (mon compte)
-    Route::get('/profile',          [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile',        [ProfileController::class, 'update'])->name('profile.update');
-    Route::patch('/pseudo',         [ProfileController::class, 'updatePseudo'])->name('profile.updatePseudo');
-    Route::patch('/password',       [ProfileController::class, 'updatePassword'])->name('profile.updatePassword');
-    Route::delete('/profile',       [ProfileController::class, 'destroy'])->name('profile.destroy'); // A REVOIR| chanbger en desative
+    Route::prefix('profile')->name('profile.')->group(function () {
+        Route::get('/',        [ProfileController::class, 'edit'])->name('edit');
+        Route::patch('/',      [ProfileController::class, 'update'])->name('update');
+        Route::patch('/pseudo',[ProfileController::class, 'updatePseudo'])->name('updatePseudo');
+        Route::patch('/password', [ProfileController::class, 'updatePassword'])->name('updatePassword');
+        Route::delete('/',     [ProfileController::class, 'destroy'])->name('destroy');
+        Route::patch('/deactivate', [ProfileController::class, 'deactivateYourself'])->name('deactivate');
+    });
 
     //Profils publics (des autres)
-    Route::get('/users/{user:pseudo}', [UserController::class, 'show'])->name('users.show');
+    Route::prefix('users')->name('users.')->group(function () {
+        Route::get('/{user:pseudo}',   [UserController::class, 'show'])->name('show');
+        Route::post('/{user:id}/block',[UserController::class, 'block'])->name('block');
+        Route::delete('/{user:id}/block', [UserController::class, 'unblock'])->name('unblock');
+        Route::get('/me/blocked',      [UserController::class, 'blockedList'])->name('blocked');
+    });
+
 
     //Events — zone utilisateur
     Route::prefix('events')->name('events.')->group(function () {
@@ -164,16 +173,14 @@ Route::middleware(['auth', 'active'])->group(function () {
 // ======================
 Route::middleware(['auth', 'active', 'admin'])->group(function () {
 
-    // Tableau de bord d’admin
-    Route::get('/admin', [UserController::class, 'adminDashboard'])->name('admin.index');
+    Route::prefix('admin')->name('admin.')->group(function () {
+        Route::get('/',                [UserController::class, 'adminDashboard'])->name('index');
+        Route::get('/export/users',    [UserController::class, 'exportUsers'])->name('export.users');
+        Route::get('/export/events',   [EventController::class, 'exportEvents'])->name('export.events');
+    });
 
     // Bouton active/désactive && changement de role users
     Route::post('/users/{user:id}/toggle-activation', [UserController::class, 'toggleActivation'])->name('users.toggleActivation');
-    Route::post('/users/{user:id}/update-role',       [UserController::class, 'updateRole'])->name('users.updateRole');
-
-    // Exports CSV
-    Route::get('/admin/export/users',  [UserController::class, 'exportUsers'])->name('admin.export.users');
-    Route::get('/admin/export/events', [EventController::class, 'exportEvents'])->name('admin.export.events');
 
     //Gestion events
     Route::post('/events/{event}/toggle-active', [EventController::class, 'toggleActive'])->name('events.toggleActive');
@@ -195,24 +202,14 @@ Route::middleware(['auth', 'active', 'admin'])->group(function () {
 Route::middleware(['auth', 'active', 'superadmin'])->group(function () {
     Route::post('/users/{user:id}/anonymize', [UserController::class, 'anonymize'])->name('users.anonymize');
     Route::post('/admin/seed/users',       [UserController::class, 'seedUsers'])->name('admin.seed.users');
+    Route::post('/users/{user:id}/update-role',       [UserController::class, 'updateRole'])->name('users.updateRole');
+
 });//### - Fin du middleware : auth + active + superadmin ***
 
 
 
-// Route PATCH protégée par auth
-Route::patch('/profile/deactivate', [\App\Http\Controllers\ProfileController::class, 'deactivateYourself'])
-    ->middleware('auth')
-    ->name('profile.deactivate');
-
-
-Route::middleware('auth')->group(function () {
-    Route::post('/users/{user:id}/block',   [UserController::class, 'block'])->name('users.block');
-    Route::delete('/users/{user:id}/block', [UserController::class, 'unblock'])->name('users.unblock');
-    // (optionnel) liste de mes utilisateurs bloqués
-    Route::get('/me/blocked',            [UserController::class, 'blockedList'])->name('users.blocked');
-});
-
-
+/*##########################################################*/
+/*------------SEND MAIL AT ADMIN OR SUPERADMIN--------------*/
 Route::post('/support/contact', [UserController::class, 'sendAdminMessage'])
-    ->middleware(['auth', 'throttle:5,1']) //
+    ->middleware(['auth', 'active', 'throttle:5,1']) //
     ->name('users.sendAdminMessage');

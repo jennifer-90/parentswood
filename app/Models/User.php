@@ -40,6 +40,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'is_actif' => 'boolean',
         'anonyme' => 'boolean',
+        'self_deactivated'    => 'boolean',
     ];
 
 

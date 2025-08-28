@@ -35,14 +35,16 @@ class AuthenticatedSessionController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        // Normalisation "soft" : trim + lowercase (on garde les espaces internes)
+        $identifier = mb_strtolower(trim((string) $request->input('identifier', '')));
+
         // Vérifiez si l'identifiant est un email ou un pseudo
-        $field = filter_var($credentials['identifier'], FILTER_VALIDATE_EMAIL) ? 'email' : 'pseudo';
+        $field = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? 'email' : 'pseudo';
 
 
         // Récupérer l'utilisateur AVANT la tentative de login
         // -> But : si son compte est désactivé (is_actif = 0), on le bloque tout de suite
         $user = User::where($field, $credentials['identifier'])->first();
-
         if ($user && !$user->is_actif) {
             return back()->withErrors([
                 'identifier' => "Votre compte a été désactivé par l'administration. Vous ne pouvez plus vous connecter.",
@@ -62,7 +64,6 @@ class AuthenticatedSessionController extends Controller
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
-
             return back()->withErrors([
                 'identifier' => "Votre compte a été désactivé par l'administration. Vous ne pouvez plus vous connecter.",
             ])->onlyInput('identifier');
