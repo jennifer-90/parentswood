@@ -40,7 +40,7 @@ class UserController extends Controller
         | ---------------------------------------------------------------- */
 
         $users = User::with('roles:id,name')
-            ->select('id', 'pseudo', 'first_name', 'last_name', 'email', 'last_login', 'is_actif', 'anonyme', 'created_at')
+            ->select('id', 'pseudo', 'first_name', 'last_name', 'email', 'last_login', 'is_actif', 'self_deactivated', 'anonyme', 'created_at')
 
             // When ==> recherche sur toute la DB côté serveur (toutes les pages) avant la pagination
             ->when($searchUsers, function ($q) use ($searchUsers) {
@@ -82,6 +82,7 @@ class UserController extends Controller
                 'email' => $user->email,
                 'last_login' => $user->last_login,
                 'is_actif' => $user->is_actif,
+                'self_deactivated' => $user->self_deactivated,
                 'anonyme' => $user->anonyme,
                 'created_at' => $user->created_at,
                 'roles' => $user->roles->map(fn($role) => [
@@ -154,7 +155,7 @@ class UserController extends Controller
     public function show(User $user)
     {
         // Si le profil est désactivé → 404
-        if (! $user->is_actif) {
+        if (! $user->is_actif || $user->self_deactivated) {
             abort(404);
         }
 
@@ -286,8 +287,10 @@ class UserController extends Controller
      */
     public function checkEmail(Request $request)
     {
-        $exists = User::where('email', $request->email)->exists();
-        return response()->json(['available' => !$exists]);
+        $email = mb_strtolower(trim((string) $request->email));
+        $exists = User::whereRaw('LOWER(email) = ?', [$email])->exists();
+
+        return response()->json(['available' => ! $exists]);
     }
 
     /**
@@ -295,7 +298,6 @@ class UserController extends Controller
      */
     public function toggleActivation(User $user)
     {
-
         $currentUser = auth()->user();
 
         if (!$currentUser->hasAnyRole(['Admin', 'Super-admin'])) {
@@ -311,8 +313,11 @@ class UserController extends Controller
             return back()->with('flash', ['error' => "Impossible de modifier cet utilisateur."]);
         }
 
+        $newIsActif = !$user->is_actif;
+
         $user->update([
-            'is_actif' => !$user->is_actif,
+            'is_actif'         => $newIsActif,
+            'self_deactivated' => false, // on efface toujours le flag côté admin
         ]);
 
         return back()->with('flash', ['success' => 'Statut mis à jour.']);
@@ -340,6 +345,7 @@ class UserController extends Controller
             'picture_profil' => null,
             'anonyme' => true,
             'is_actif' => false,
+            'self_deactivated'=> false,
         ]);
 
         return back()->with('flash', ['success' => 'Utilisateur anonymisé.']);
@@ -389,7 +395,7 @@ class UserController extends Controller
     public function exportUsers()
     {
         $users = User::with('roles')->get([
-            'id', 'pseudo', 'first_name', 'last_name', 'email', 'is_actif', 'anonyme', 'last_login'
+            'id', 'pseudo', 'first_name', 'last_name', 'email', 'is_actif','self_deactivated', 'anonyme', 'last_login'
         ]);
 
         $csvData = $users->map(function ($user) {
@@ -400,6 +406,7 @@ class UserController extends Controller
                 'Nom' => $user->last_name,
                 'Email' => $user->email,
                 'Actif' => $user->is_actif ? 'Oui' : 'Non',
+                'Auto-désactivation'  => $user->self_deactivated ? 'Oui' : 'Non',
                 'Anonyme' => $user->anonyme ? 'Oui' : 'Non',
                 'Dernière connexion' => $user->last_login,
             ];

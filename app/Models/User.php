@@ -25,6 +25,7 @@ class User extends Authenticatable
         'picture_profil',
         'privacy_status',
         'is_actif',
+        'self_deactivated',
         'max_create_event',
         'anonyme',
         'centre_interet',

@@ -31,34 +31,51 @@ class ProfileController extends Controller
      */
     public function deactivateYourself(Request $request): RedirectResponse
     {
-        // Exige le mot de passe actuel
+        // 1) Mot de passe actuel obligatoire
         $request->validate([
             'password' => ['required', 'current_password'],
         ]);
 
         $user = $request->user();
 
-        // Si déjà inactif, on évite un update inutile
-        if (!$user->is_actif) {
-            // Déconnexion + nettoyage session pour être cohérent
+        // 2) Cas déjà auto-désactivé : on ne réécrit pas pour rien
+        if (!$user->is_actif && $user->self_deactivated) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            return Redirect::to('/')
-                ->with('flash', ['success' => 'Votre compte est déjà inactif. Vous avez été déconnecté.']);
+            return Redirect::to('/')->with('flash', [
+                'success' => 'Votre compte est déjà désactivé. Vous avez été déconnecté.',
+            ]);
         }
 
-        // Mise en inactif
-        $user->update(['is_actif' => false]);
+        // 3) Si déjà inactif mais PAS auto-désactivé -> c’est l’admin qui a désactivé.
+        if (!$user->is_actif && !$user->self_deactivated) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
 
-        // Déconnexion + nettoyage session
+            return Redirect::to('/')->with('flash', [
+                'error' => "Votre compte a été désactivé par l'administration.",
+            ]);
+        }
+
+        // 4) Désactivation par l’utilisateur : on pose les 2 flags
+        $user->forceFill([
+            'is_actif' => false,
+            'self_deactivated' => true,
+        ])->save();
+
+        // 5) Déconnexion propre
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return Redirect::to('/')
-            ->with('flash', ['success' => 'Votre compte a été désactivé (inactif). Vous pouvez le réactiver plus tard via le support.']);
+
+        // 6) Message clair : réactivation automatique au prochain login
+        return Redirect::to('/')->with('flash', [
+            'success' => 'Votre compte est maintenant désactivé. Vous pourrez le réactiver à tout moment en vous reconnectant.',
+        ]);
     }
 
 

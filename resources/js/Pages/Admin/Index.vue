@@ -8,8 +8,6 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 const route = window.route;
 
 
-
-
 /** Lance la recherche après +-300 ms sans frappe (évite une requête par lettre). */
 function debounce(action, delaiMs = 300) {
     let timeout = null;
@@ -30,31 +28,31 @@ const props = defineProps({
 /*==============================================================*/
 /****************************************************************/
 
-const inertiaNavOpts = { preserveState: true, replace: true, preserveScroll: true }; // Options communes pour Inertia
+const inertiaNavOpts = {preserveState: true, replace: true, preserveScroll: true}; // Options communes pour Inertia
 
 /**
  * Aller vers une page Users donnée, en gardant les filtres
  * et en REMETTANT les Events sur la page 1.
  */
 const goToUsersPagination = (linkUrl) => {
-  // On lit le numéro de page dans l'URL générée par Laravel
-  const fullUrl = new URL(linkUrl, window.location.origin);
-  const nextUsersPage = Number(
-    fullUrl.searchParams.get('users_page') ?? fullUrl.searchParams.get('page') ?? '1'
-  );
+    // On lit le numéro de page dans l'URL générée par Laravel
+    const fullUrl = new URL(linkUrl, window.location.origin);
+    const nextUsersPage = Number(
+        fullUrl.searchParams.get('users_page') ?? fullUrl.searchParams.get('page') ?? '1'
+    );
 
-  router.get(
-    route('admin.index'),
-    {
-      // on renvoie toujours les 2 filtres pour ne pas les perdre
-      search_users:  searchUser.value,
-      search_events: searchEvent.value,
+    router.get(
+        route('admin.index'),
+        {
+            // on renvoie toujours les 2 filtres pour ne pas les perdre
+            search_users: searchUser.value,
+            search_events: searchEvent.value,
 
-      users_page:  nextUsersPage, // aller à cette page Users
-      events_page: 1,             // << on force Events à revenir en page 1
-    },
-    inertiaNavOpts
-  );
+            users_page: nextUsersPage, // aller à cette page Users
+            events_page: 1,             // << on force Events à revenir en page 1
+        },
+        inertiaNavOpts
+    );
 };
 
 /**
@@ -62,33 +60,27 @@ const goToUsersPagination = (linkUrl) => {
  * et en GARDANT la page Users actuelle (pas de reset).
  */
 const goToEventsPagination = (linkUrl) => {
-  const fullUrl = new URL(linkUrl, window.location.origin);
-  const nextEventsPage = Number(
-    fullUrl.searchParams.get('events_page') ?? fullUrl.searchParams.get('page') ?? '1'
-  );
+    const fullUrl = new URL(linkUrl, window.location.origin);
+    const nextEventsPage = Number(
+        fullUrl.searchParams.get('events_page') ?? fullUrl.searchParams.get('page') ?? '1'
+    );
 
-  router.get(
-    route('admin.index'),
-    {
-      search_users:  searchUser.value,
-      search_events: searchEvent.value,
+    router.get(
+        route('admin.index'),
+        {
+            search_users: searchUser.value,
+            search_events: searchEvent.value,
 
-      users_page:  props.users?.current_page ?? 1, // on garde la page Users affichée
-      events_page: nextEventsPage,                 // aller à cette page Events
-    },
-    inertiaNavOpts
-  );
+            users_page: props.users?.current_page ?? 1, // on garde la page Users affichée
+            events_page: nextEventsPage,                 // aller à cette page Events
+        },
+        inertiaNavOpts
+    );
 };
 
 
-
-
-
-const getUserGlobalIndex  = (i) => (props.users?.from  ?? 0) + i;
+const getUserGlobalIndex = (i) => (props.users?.from ?? 0) + i;
 const getEventGlobalIndex = (i) => (props.events?.from ?? 0) + i;
-
-
-
 
 
 /* ########## INFOS DU USER CONNECTE A L'HEURE ACTUELLE ##########################################################*/
@@ -100,7 +92,7 @@ const nowConnectUserId = nowConnectUser.id;
 /* ########## TEXTE DYNAMIQUE POUR LE TITRE DE LA PAGE ADMIN ##################################################*/
 const adminTitle = computed(() => {
     if (roles.value.includes('Super-admin')) return 'Gestion Super Admin';
-    if (roles.value.includes('Admin'))       return 'Gestion Admin';
+    if (roles.value.includes('Admin')) return 'Gestion Admin';
     return 'Espace d’administration';
 });
 
@@ -118,7 +110,7 @@ const updateRole = (user, event) => {
 
     const newRole = event.target.value;
     if (!confirm(`Attribuer le rôle "${newRole}" à ${user.pseudo} ?`)) return;
-    router.post(route('users.updateRole', { user: user.id }), { role: newRole }, { preserveScroll: true });
+    router.post(route('users.updateRole', {user: user.id}), {role: newRole}, {preserveScroll: true});
 };
 
 
@@ -127,12 +119,12 @@ const updateRole = (user, event) => {
 const escapeHtml = (s) =>
     String(s ?? '').replace(/[&<>"]/g,
         c => ({
-            '&':'&amp;',
-            '<':'&lt;',
-            '>':'&gt;',
-            '"':'&quot;'
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;'
         }[c]));
-        // Ex.: "<scr" + "ipt>alert(1)</scr" + "ipt>" devient &lt;script&gt;alert(1)&lt;/script&gt;.
+// Ex.: "<scr" + "ipt>alert(1)</scr" + "ipt>" devient &lt;script&gt;alert(1)&lt;/script&gt;.
 
 
 /** Surligne le terme recherché avec <mark> en évitant le XSS  - On échappe d'abord le HTML pour éviter le XSS */
@@ -156,39 +148,37 @@ const searchEvent = useRemember(props.filters?.search_events ?? '', 'admin.event
 // (évite les requêtes à chaque frappe de touche)
 // On utilise `watch` pour réagir aux changements de `searchUser`
 watch(
-  searchUser,
-  debounce((v) => {
-    router.get(
-      route('admin.index'),
-      {
-        search_users:  v,                               // on met à jour ce qu'on tape
-        search_events: searchEvent.value,               // on garde l'autre filtre
-        users_page:    1,                               // reset Users
-        events_page:   props.events?.current_page ?? 1, // on garde la page Events actuelle
-      },
-      inertiaNavOpts
-    );
-  }, 300)
+    searchUser,
+    debounce((v) => {
+        router.get(
+            route('admin.index'),
+            {
+                search_users: v,                               // on met à jour ce qu'on tape
+                search_events: searchEvent.value,               // on garde l'autre filtre
+                users_page: 1,                               // reset Users
+                events_page: props.events?.current_page ?? 1, // on garde la page Events actuelle
+            },
+            inertiaNavOpts
+        );
+    }, 300)
 );
-
 
 //Recherche événement : toutes les données de la db et non des données paginées
 watch(
-  searchEvent,
-  debounce((v) => {
-    router.get(
-      route('admin.index'),
-      {
-        search_users:  searchUser.value,                // on garde l'autre filtre
-        search_events: v,                               // on met à jour ce qu'on tape
-        users_page:    props.users?.current_page ?? 1,  // on garde la page Users actuelle
-        events_page:   1,                               // reset Events
-      },
-      inertiaNavOpts
-    );
-  }, 300)
+    searchEvent,
+    debounce((v) => {
+        router.get(
+            route('admin.index'),
+            {
+                search_users: searchUser.value,                // on garde l'autre filtre
+                search_events: v,                               // on met à jour ce qu'on tape
+                users_page: props.users?.current_page ?? 1,  // on garde la page Users actuelle
+                events_page: 1,                               // reset Events
+            },
+            inertiaNavOpts
+        );
+    }, 300)
 );
-
 
 /* ########## TRIER/FILTRER LE TABLEAU USER ####################################################################*/
 
@@ -206,7 +196,7 @@ const sortBy = (field) => {
 
 const sortedUsers = computed(() => {
     if (!Array.isArray(props.users?.data)) return [];// Si pas de données, retourne un tableau vide
-    const fieldName   = sortField.value; // colonne choisie (pseudo, email, ...)
+    const fieldName = sortField.value; // colonne choisie (pseudo, email, ...)
     const isAscending = sortAsc.value;   // sens du tri
 
     // 0) Petit helper pour convertir proprement "anonyme" en booléen (gère 0/1, "0"/"1", true/false, null)
@@ -214,7 +204,7 @@ const sortedUsers = computed(() => {
 
     // 1) Séparer les utilisateurs : non-anonymes d’un côté, anonymes de l’autre
     const nonAnonymous = props.users.data.filter(u => !toBool(u.anonyme));
-    const anonymous    = props.users.data.filter(u =>  toBool(u.anonyme));
+    const anonymous = props.users.data.filter(u => toBool(u.anonyme));
 
     // 2) Définir un comparateur pour trier par la colonne choisie
     const normalize = (v) => {
@@ -227,7 +217,7 @@ const sortedUsers = computed(() => {
         const bValue = normalize(b[fieldName]);
 
         if (aValue < bValue) return isAscending ? -1 : 1;
-        if (aValue > bValue) return isAscending ?  1 : -1;
+        if (aValue > bValue) return isAscending ? 1 : -1;
         return 0; // égalité
     };
 
@@ -243,14 +233,14 @@ const filteredUsers = computed(() => {
 
     return sortedUsers.value.filter(user => {
         const pseudo = (user.pseudo || '').toLowerCase();
-        const first  = (user.first_name || '').toLowerCase();
-        const last   = (user.last_name || '').toLowerCase();
-        const email  = (user.email || '').toLowerCase();
+        const first = (user.first_name || '').toLowerCase();
+        const last = (user.last_name || '').toLowerCase();
+        const email = (user.email || '').toLowerCase();
 
         return (
             pseudo.includes(query) ||
-            first.includes(query)  ||
-            last.includes(query)   ||
+            first.includes(query) ||
+            last.includes(query) ||
             email.includes(query)
         );
     });
@@ -268,12 +258,12 @@ const prioritizedEvents = computed(() => {
 
     // 2 array avec signalements / sans signalements
     const reportedEvents = []; // cloche rouge (reports_count > 0)
-    const regularEvents  = []; // cloche grise (0)
+    const regularEvents = []; // cloche grise (0)
 
     // on parcourt dans l'ordre d'origine pour conserver cet ordre
     for (const event of allEvents) {
-        const nameLower     = (event.name_event || '').toLowerCase();
-        const locationLower = (event.location   || '').toLowerCase();
+        const nameLower = (event.name_event || '').toLowerCase();
+        const locationLower = (event.location || '').toLowerCase();
 
         const matchesSearch =
             !searchTerm ||
@@ -299,14 +289,14 @@ const prioritizedEvents = computed(() => {
 const toggleActivation = (user) => {
     if (user.anonyme || user.roles.some(r => r.name === 'Super-admin')) return;
     if (!confirm(`Voulez-vous ${user.is_actif ? 'désactiver' : 'activer'} ${user.pseudo} ?`)) return;
-    router.post(route('users.toggleActivation', { user: user.id }), {}, {preserveScroll: true});
+    router.post(route('users.toggleActivation', {user: user.id}), {}, {preserveScroll: true});
 };
 
 /* ########## ANOMYSER UN USER #############################################################################*/
 const anonymizeUser = (user) => {
     if ((user.is_super_admin) || (user.anonyme)) return;
     if (!confirm(`Voulez-vous anonymiser ${user.pseudo} ?`)) return;
-    router.post(route('users.anonymize', { user: user.id }), {}, {preserveScroll: true});
+    router.post(route('users.anonymize', {user: user.id}), {}, {preserveScroll: true});
 };
 
 /* ########## ACTIVER/DESACTIVER UN EVENT ##################################################################*/
@@ -315,7 +305,7 @@ const toggleEventActivation = (event) => {
         return;
     }
 
-    router.post(route('events.toggleActive', { event: event.id }), {}, {
+    router.post(route('events.toggleActive', {event: event.id}), {}, {
         preserveScroll: true,
         onSuccess: () => {
             // Mettre à jour l'état local
@@ -331,7 +321,7 @@ const toggleEventActivation = (event) => {
 /* ########## VALIDER/REFUSER UN EVENT #######################################################################*/
 const acceptEvent = (event) => {
     if (!confirm(`Accepter l'événement "${event.name_event}" ?`)) return;
-    router.post(route('events.accept', { event: event.id }), {}, {
+    router.post(route('events.accept', {event: event.id}), {}, {
         preserveScroll: true,
         onSuccess: () => router.visit(route('admin.index'), {preserveScroll: true, preserveState: false}),
         onError: () => alert('Erreur lors de l\'acceptation.')
@@ -340,7 +330,7 @@ const acceptEvent = (event) => {
 
 const refuseEvent = (event) => {
     if (!confirm(`Refuser l'événement "${event.name_event}" ?`)) return;
-    router.post(route('events.refuse', { event: event.id }), {}, {
+    router.post(route('events.refuse', {event: event.id}), {}, {
         preserveScroll: true,
         onSuccess: () => router.visit(route('admin.index')),
         onError: () => alert('Erreur lors du refus.')
@@ -352,7 +342,7 @@ const refuseEvent = (event) => {
 /* ...imports existants... */
 const seedUsers = () => {
     if (!confirm('Créer 10 utilisateurs de test ?')) return;
-    router.post(route('admin.seed.users'), { count: 10 }, {
+    router.post(route('admin.seed.users'), {count: 10}, {
         preserveScroll: true,
         onSuccess: () => router.visit(route('admin.index'), {
             preserveScroll: true, preserveState: false
@@ -360,12 +350,11 @@ const seedUsers = () => {
     });
 };
 
-
 /* ########## RESET ALERT #####################################################################*/
 const clearEventReports = (event) => {
     if (!confirm(`Remettre à zéro les signalements pour "${event.name_event}" ?`)) return;
 
-    router.post(route('events.reports.clear', { event: event.id }), {}, {
+    router.post(route('events.reports.clear', {event: event.id}), {}, {
         preserveScroll: true,
         onSuccess: () => {
             // MAJ optimiste de l’UI
@@ -388,7 +377,6 @@ const clearEventReports = (event) => {
             <div class="mx-auto w-full px-3 sm:px-5">
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
 
-
                     <!--########## Titre principal avec icône ##########-->
                     <div class="bg-transparent border-2 border-[#ffb347] rounded-lg p-4 mb-6"
                          style="background-color: rgba(255, 179, 71, 0.05);">
@@ -401,29 +389,41 @@ const clearEventReports = (event) => {
                     </div>
 
                     <!--########## BANDEAU D'ACCUEIL ##########-->
-                    <div class="mb-6 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4" role="region" aria-labelledby="admin-help-title">
+                    <div class="mb-6 rounded-lg border border-[#59c4b4]/30 bg-[#59c4b4]/10 p-4" role="region"
+                         aria-labelledby="admin-help-title">
                         <div class="flex items-start gap-3">
                             <i class="fa-solid fa-circle-info mt-1 text-[#59c4b4]" aria-hidden="true"></i>
                             <div>
-                                <p id="admin-help-title" class="font-semibold text-gray-800">Bienvenue dans l’espace d’administration</p>
+                                <p id="admin-help-title" class="font-semibold text-gray-800">Bienvenue dans l’espace
+                                    d’administration</p>
 
                                 <ul class="mt-2 text-sm text-gray-700 list-disc pl-5 space-y-1 leading-relaxed">
                                     <li>Utilisez les barres de recherche pour filtrer.</li>
                                     <li>Cliquez sur un <strong>Pseudo</strong> pour ouvrir le profil.</li>
-                                    <li>Cliquez sur les <strong>en-têtes</strong> <strong>Pseudo / Nom / Email</strong> pour trier.</li>
+                                    <li>Cliquez sur les <strong>en-têtes</strong> <strong>Pseudo / Nom / Email</strong>
+                                        pour trier.
+                                    </li>
                                     <li v-if="isSuperAdmin()">
-                                        Les boutons permettent d’activer/désactiver, anonymiser et <strong>changer un rôle</strong>.
+                                        Les boutons permettent d’activer/désactiver, anonymiser et <strong>changer un
+                                        rôle</strong>.
                                     </li>
                                     <li v-else>
-                                        Les boutons permettent d’activer/désactiver. <strong>Seul un Super-admin peut changer les rôles.</strong>
+                                        Les boutons permettent d’activer/désactiver. <strong>Seul un Super-admin peut
+                                        changer les rôles.</strong>
                                     </li>
 
                                     <!-- Bloc réservé Super-admin -->
                                     <template v-if="isSuperAdmin()">
-                                        <li>Générez 10 utilisateurs de test autant de fois que nécessaire (réservé <strong>Super-admin</strong>).</li>
-                                        <li>Seul un <strong>Super-admin</strong> peut attribuer le rôle « Super-admin ».</li>
-                                        <li>Pour <strong>anonymiser</strong> ou <strong>désactiver</strong> un <strong>Admin</strong> ou un <strong>Super-admin</strong>, mettez d’abord son rôle sur « User ».</li>
-                                        <li>Personne ne peut <strong>s’auto-désactiver</strong> ni <strong>s’auto-anonymiser</strong>.</li>
+                                        <li>Générez 10 utilisateurs de test autant de fois que nécessaire (réservé
+                                            <strong>Super-admin</strong>).
+                                        </li>
+                                        <li>Seul un <strong>Super-admin</strong> peut attribuer le rôle « Super-admin ».
+                                        </li>
+                                        <li>Pour <strong>anonymiser</strong> ou <strong>désactiver</strong> un <strong>Admin</strong>
+                                            ou un <strong>Super-admin</strong>, mettez d’abord son rôle sur « User ».
+                                        </li>
+                                        <li>Personne ne peut <strong>s’auto-désactiver</strong> ni <strong>s’auto-anonymiser</strong>.
+                                        </li>
                                     </template>
 
                                     <!-- Variante visible pour Admins -->
@@ -434,7 +434,6 @@ const clearEventReports = (event) => {
                             </div>
                         </div>
                     </div>
-
 
                     <!-- ================================================================== -->
                     <!-- Layout responsive : vertical sur mobile, horizontal sur desktop -->
@@ -513,7 +512,7 @@ const clearEventReports = (event) => {
                                         </th>
 
                                         <!-- title statut -->
-                                        <th  class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                             Statut
                                         </th>
 
@@ -538,37 +537,63 @@ const clearEventReports = (event) => {
                                             <i class="fa-solid fa-user text-[#59c4b4]" aria-hidden="true"></i>&nbsp;
                                             <Link
                                                 :href="route('users.show', { user: user.pseudo })"
-                                            class="font-medium text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                class="font-medium text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                                             >
-                                            <span v-html="highlight(user.pseudo, searchUser)"></span>
+                                            <span
+                                                class="inline-block truncate max-w-[8ch]"
+                                                :title="user.pseudo"
+                                                v-html="highlight(user.pseudo || '', searchUser)"
+                                            ></span>
                                             </Link>
                                         </td>
 
                                         <!-- value name + lastname user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(user.first_name + ' ' + user.last_name, searchUser)"
-                                                  class="text-gray-700"></span>
+                                          <span
+                                              class="inline-block truncate max-w-[14ch]"
+                                              :title="((user.first_name || '') + ' ' + (user.last_name || '')).trim()"
+                                              v-html="highlight((((user.first_name || '') + ' ' + (user.last_name || '')).trim()), searchUser)"
+                                          ></span>
                                         </td>
+
 
                                         <!-- value email user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <span v-html="highlight(user.email, searchUser)"
-                                                  class="text-gray-700"></span>
+                                          <span
+                                              class="inline-block truncate max-w-[17ch]"
+                                              :title="user.email"
+                                              v-html="highlight(user.email || '', searchUser)"
+                                          ></span>
                                         </td>
+
 
                                         <!-- value staut user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                                <span v-if="user.is_actif"
-                                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                    <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
-                                                    Actif
-                                                </span>
-                                            <span v-else
-                                                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                    <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
-                                                    Inactif
-                                                </span>
+                                          <span
+                                              v-if="!user.is_actif && user.self_deactivated"
+                                              class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800"
+                                          >
+                                            <span class="w-2 h-2 bg-amber-400 rounded-full mr-1.5"></span>
+                                            Auto-désactivation
+                                          </span>
+
+                                            <span
+                                                v-else-if="user.is_actif"
+                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                                            >
+                                            <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
+                                            Actif
+                                          </span>
+
+                                            <span
+                                                v-else
+                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                                            >
+                                            <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
+                                            Inactif
+                                          </span>
                                         </td>
+
 
                                         <!-- value role user -->
                                         <td class="px-4 py-3 whitespace-nowrap">
@@ -579,10 +604,10 @@ const clearEventReports = (event) => {
                                                     :disabled="user.cannot_edit_role"
                                                     class="text-sm rounded-full px-3 py-1 font-medium border-0 focus:ring-2 focus:ring-[#59c4b4]"
                                                     :class="{
-        'bg-red-100 text-red-800': user.is_super_admin,
-        'bg-blue-100 text-blue-800': !user.is_super_admin && user.role_name === 'Admin',
-        'bg-green-100 text-green-800': user.role_name === 'User'
-      }"
+                                                        'bg-red-100 text-red-800': user.is_super_admin,
+                                                        'bg-blue-100 text-blue-800': !user.is_super_admin && user.role_name === 'Admin',
+                                                        'bg-green-100 text-green-800': user.role_name === 'User'
+                                                      }"
                                                 >
                                                     <option value="User">User</option>
                                                     <option value="Admin">Admin</option>
@@ -590,9 +615,10 @@ const clearEventReports = (event) => {
                                                 </select>
                                             </template>
                                             <template v-else>
-    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-      {{ user.role_name }}
-    </span>
+                                                <span
+                                                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                                                  {{ user.role_name }}
+                                                </span>
                                             </template>
                                         </td>
 
@@ -666,14 +692,32 @@ const clearEventReports = (event) => {
                                 <div>
                                     <p class="font-semibold text-gray-800">Aide – Gestion des Événements</p>
                                     <ul class="mt-2 text-sm text-gray-700 list-disc pl-5 space-y-1 leading-relaxed">
-                                        <li>Cliquez sur le <strong>nom</strong> d’un événement pour ouvrir sa page (vue détail).</li>
-                                        <li>La <strong>cloche</strong> indique le nombre de signalements ; elle devient <strong class="text-red-600">rouge</strong> si &gt; 0.</li>
-                                        <li>Le bouton <em>Reset</em> remet le compteur de signalements à 0 <template v-if="isSuperAdmin()"> (Super-admin & Admin)</template><template v-else>(Admin)</template>.</li>
-                                        <li>Le badge <strong>Actif / Inactif</strong> reflète la visibilité. Le bouton <em>Activer/Désactiver</em> bascule l’état.</li>
-                                        <li><strong>Validation</strong> : <em>Accepter</em> publie l’événement (confirmé = true, inactif = false) ; <em>Refuser</em> le rend inactif.</li>
-                                        <li><strong>Annulation</strong> : le créateur, un Admin ou un Super-admin peut annuler (l’événement passe Inactif, avec note/date).</li>
-                                        <li>Les événements <strong>inactifs</strong> ne sont visibles que par l’Admin/Super-admin et le créateur.</li>
-                                        <li>Le bouton “Exporter les événements (.csv)” exporte selon la recherche en cours.</li>
+                                        <li>Cliquez sur le <strong>nom</strong> d’un événement pour ouvrir sa page (vue
+                                            détail).
+                                        </li>
+                                        <li>La <strong>cloche</strong> indique le nombre de signalements ; elle devient
+                                            <strong class="text-red-600">rouge</strong> si &gt; 0.
+                                        </li>
+                                        <li>Le bouton <em>Reset</em> remet le compteur de signalements à 0
+                                            <template v-if="isSuperAdmin()"> (Super-admin & Admin)</template>
+                                            <template v-else>(Admin)</template>
+                                            .
+                                        </li>
+                                        <li>Le badge <strong>Actif / Inactif</strong> reflète la visibilité. Le bouton
+                                            <em>Activer/Désactiver</em> bascule l’état.
+                                        </li>
+                                        <li><strong>Validation</strong> : <em>Accepter</em> publie l’événement (confirmé
+                                            = true, inactif = false) ; <em>Refuser</em> le rend inactif.
+                                        </li>
+                                        <li><strong>Annulation</strong> : le créateur, un Admin ou un Super-admin peut
+                                            annuler (l’événement passe Inactif, avec note/date).
+                                        </li>
+                                        <li>Les événements <strong>inactifs</strong> ne sont visibles que par
+                                            l’Admin/Super-admin et le créateur.
+                                        </li>
+                                        <li>Le bouton “Exporter les événements (.csv)” exporte selon la recherche en
+                                            cours.
+                                        </li>
                                     </ul>
                                 </div>
                             </div>
@@ -751,7 +795,7 @@ const clearEventReports = (event) => {
 
                                     <tr v-for="(event, index) in prioritizedEvents" :key="event.id"
 
-                                    :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
+                                        :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'"
                                         class="hover:bg-blue-50 transition-colors">
 
 
@@ -760,14 +804,13 @@ const clearEventReports = (event) => {
                                         </td>
 
 
-
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <div class="flex items-center">
                                                 <i class="fa-solid fa-bell"
                                                    :class="event.reports_count > 0 ? 'text-red-600' : 'text-gray-400'"></i>
                                                 <span v-if="event.reports_count" class="ml-1 text-xs font-semibold">
-      {{ event.reports_count }}
-    </span>
+                                                  {{ event.reports_count }}
+                                                </span>
 
                                                 <!-- Bouton reset si au moins un signalement -->
                                                 <button
@@ -782,12 +825,17 @@ const clearEventReports = (event) => {
                                             </div>
                                         </td>
 
-                                        <td class="px-4 py-3 ">
+                                        <td class="px-4 py-3">
                                             <Link
                                                 :href="route('events.show', event.id)"
                                                 class="font-medium text-blue-600 hover:underline"
                                             >
-                                                <span v-html="highlight(event.name_event, searchEvent)"></span>
+                                            <span
+                                                class="inline-block truncate max-w-[16ch] sm:max-w-[16ch] lg:max-w-[16ch]"
+                                                :title="event.name_event || ''"
+                                                :aria-label="event.name_event || ''"
+                                                v-html="highlight(event.name_event || '', searchEvent)"
+                                            ></span>
                                             </Link>
                                         </td>
 
@@ -801,102 +849,105 @@ const clearEventReports = (event) => {
 
 
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-  <div class="flex items-center gap-2" :title="new Date(event.date).toLocaleString('fr-BE')">
-    <i class="fa-solid fa-calendar text-[#59c4b4]" aria-hidden="true"></i>
-    <span>{{ new Date(event.date).toLocaleDateString('fr-BE') }}</span>
+                                            <div class="flex items-center gap-2"
+                                                 :title="new Date(event.date).toLocaleString('fr-BE')">
+                                                <i class="fa-solid fa-calendar text-[#59c4b4]" aria-hidden="true"></i>
+                                                <span>{{ new Date(event.date).toLocaleDateString('fr-BE') }}</span>
 
-  </div>
-</td>
-
-
-
-                                      <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-  <!-- Pseudo + icône -->
-  <div class="flex items-center gap-1.5">
-    <i class="fa-solid fa-user text-[#59c4b4]" aria-hidden="true"></i>
-    <!-- Option: lien vers le profil du créateur -->
-
-    <Link v-if="event.creator"
-          :href="route('users.show', { user: event.creator.pseudo })"
-          class="hover:underline">
-      {{ event.creator.pseudo }}
-    </Link>
-
-  </div>
-
-  <!-- À la ligne : badge “a annulé” si l’événement est annulé -->
-  <span
-    v-if="event.cancelled_at"
-    class="mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700"
-    :title="`le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'})}`"
-  >
-    a annulé
-  </span>
-</td>
+                                            </div>
+                                        </td>
 
 
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                                            <!-- Pseudo + icône -->
+                                            <div class="flex items-center gap-1.5">
+                                                <i class="fa-solid fa-user text-[#59c4b4]" aria-hidden="true"></i>
+                                                <!-- Option: lien vers le profil du créateur -->
 
+                                                <Link v-if="event.creator"
+                                                      :href="route('users.show', { user: event.creator.pseudo })"
+                                                      class="hover:underline">
+                                                    {{ event.creator.pseudo }}
+                                                </Link>
 
+                                            </div>
 
+                                            <!-- À la ligne : badge “a annulé” si l’événement est annulé -->
+                                            <span
+                                                v-if="event.cancelled_at"
+                                                class="mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700"
+                                                :title="`le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'})}`"
+                                            >
+                                            a annulé
+                                          </span>
+                                        </td>
 
-                                       <td class="px-4 py-3 text-sm align-top">
-  <div class="flex flex-col gap-1">
-    <!-- Actif / Inactif -->
-    <span v-if="!event.inactif"
-          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-      <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
-      Actif
-    </span>
-    <span v-else
-          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-      <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
-      Inactif
-    </span>
+                                        <td class="px-4 py-3 text-sm align-top">
+                                            <div class="flex flex-col gap-1">
+                                                <!-- Actif / Inactif -->
+                                                <span v-if="!event.inactif"
+                                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                  <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5"></span>
+                                                  Actif
+                                                </span>
+                                                <span v-else
+                                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                  <span class="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></span>
+                                                  Inactif
+                                                </span>
 
-    <!-- Annulé -->
-    <span v-if="event.cancelled_at"
-          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200"
-          :title="`Annulé le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit', minute:'2-digit'})}`">
-      <span class="w-2 h-2 bg-red-500 rounded-full mr-1.5"></span>
-      Annulé
-    </span>
-  </div>
-</td>
-
-
+                                                <!-- Annulé -->
+                                                <span v-if="event.cancelled_at"
+                                                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200"
+                                                      :title="`Annulé le ${new Date(event.cancelled_at).toLocaleDateString('fr-BE')} à ${new Date(event.cancelled_at).toLocaleTimeString('fr-BE',{hour:'2-digit', minute:'2-digit'})}`">
+                                                  <span class="w-2 h-2 bg-red-500 rounded-full mr-1.5"></span>
+                                                  Annulé
+                                                </span>
+                                            </div>
+                                        </td>
 
 
                                         <td class="px-4 py-3 text-sm text-gray-700">
                                             <div v-if="event.confirmed === true">
                                                 <!-- ligne 1 : badge -->
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-      <i class="fa fa-check mr-1"></i> Accepté
-    </span>
+                                                <span
+                                                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                      <i class="fa fa-check mr-1"></i> Accepté
+                                                    </span>
 
                                                 <!-- lignes 2 & 3 : infos, chacune à la ligne -->
-                                                <div v-if="event.validated_by" class="mt-1 text-xs text-gray-500 leading-snug break-words">
+                                                <div v-if="event.validated_by"
+                                                     class="mt-1 text-xs text-gray-500 leading-snug break-words">
                                                     <div>par {{ event.validated_by.pseudo }}</div>
-                                                    <div>{{ new Date(event.validated_at).toLocaleDateString('fr-BE') }}</div>
+                                                    <div>{{
+                                                            new Date(event.validated_at).toLocaleDateString('fr-BE')
+                                                        }}
+                                                    </div>
                                                 </div>
                                             </div>
 
                                             <div v-else-if="event.confirmed === false">
-    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-      <i class="fa fa-close mr-1"></i> Refusé
-    </span>
-                                                <div v-if="event.validated_by" class="mt-1 text-xs text-gray-500 leading-snug break-words">
+                                                <span
+                                                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                  <i class="fa fa-close mr-1"></i> Refusé
+                                                </span>
+                                                <div v-if="event.validated_by"
+                                                     class="mt-1 text-xs text-gray-500 leading-snug break-words">
                                                     <div>par {{ event.validated_by.pseudo }}</div>
-                                                    <div>{{ new Date(event.validated_at).toLocaleDateString('fr-BE') }}</div>
+                                                    <div>{{
+                                                            new Date(event.validated_at).toLocaleDateString('fr-BE')
+                                                        }}
+                                                    </div>
                                                 </div>
                                             </div>
 
                                             <div v-else>
-    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-      <i class="fa fa-clock mr-1"></i> En attente
-    </span>
+                                            <span
+                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                              <i class="fa fa-clock mr-1"></i> En attente
+                                            </span>
                                             </div>
                                         </td>
-
 
 
                                         <td class="px-4 py-3 whitespace-nowrap space-x-2">
@@ -905,8 +956,8 @@ const clearEventReports = (event) => {
                                                 v-if="event.confirmed !== null"
                                                 class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
                                                 :class="event.inactif
-        ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
-        : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'"
+                                                ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
+                                                : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'"
                                             >
                                                 {{ event.inactif ? 'Activer' : 'Désactiver' }}
                                             </button>
