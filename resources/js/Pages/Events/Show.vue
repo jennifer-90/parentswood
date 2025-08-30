@@ -1,8 +1,8 @@
 <script setup>
-import { ref, computed, toRefs } from 'vue'
-import { usePage, router, Link } from '@inertiajs/vue3'
+import {ref, computed, toRefs} from 'vue'
+import {usePage, router, Link} from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
-import { Head } from '@inertiajs/vue3'
+import {Head} from '@inertiajs/vue3'
 
 const props = defineProps({
     event: Object,
@@ -10,7 +10,7 @@ const props = defineProps({
     already_reported: Boolean,
 })
 
-const { event, messages, already_reported } = toRefs(props)
+const {event, messages, already_reported} = toRefs(props)
 const alreadyReported = ref(!!already_reported.value)
 
 // Affichages
@@ -35,13 +35,16 @@ const canEditEvent = computed(() =>
 
 // Participation (pas d’optimisme, on recharge)
 const toggleParticipation = () => {
-    if (!currentUser) { router.visit(route('login')); return }
+    if (!currentUser) {
+        router.visit(route('login'));
+        return
+    }
     router.post(
-        route('events.toggleParticipation', { event: event.value.id }),
+        route('events.toggleParticipation', {event: event.value.id}),
         {},
         {
             preserveScroll: true,
-            onSuccess: () => router.reload({ only: ['event'] }),
+            onSuccess: () => router.reload({only: ['event']}),
             onError: () => alert('❌ Erreur lors de la mise à jour de votre participation.'),
         }
     )
@@ -50,16 +53,19 @@ const toggleParticipation = () => {
 // Commentaires (CORRIGÉ: event.value.id)
 const postComment = () => {
     if (!newMessage.value.trim()) return
-    if (!currentUser) { router.visit(route('login')); return }
+    if (!currentUser) {
+        router.visit(route('login'));
+        return
+    }
 
     router.post(
-        route('events.messages.store', { event: event.value.id }),
-        { text: newMessage.value },
+        route('events.messages.store', {event: event.value.id}),
+        {text: newMessage.value},
         {
             preserveScroll: true,
             onSuccess: () => {
                 newMessage.value = ''
-                router.reload({ only: ['messages'] })
+                router.reload({only: ['messages']})
             },
             onError: () => alert("❌ Erreur lors de l'envoi du commentaire."),
         }
@@ -111,17 +117,37 @@ const cancelEvent = () => {
 
 // Signalement
 const reportEvent = () => {
-    if (!currentUser) { router.visit(route('login')); return }
+    if (!currentUser) {
+        router.visit(route('login'));
+        return
+    }
     router.post(route('events.report', event.value.id), {}, {
         preserveScroll: true,
-        onSuccess: () => { alreadyReported.value = true },
+        onSuccess: () => {
+            alreadyReported.value = true
+        },
     })
 }
+
+const isPastEvent = computed(() => {
+    const d = event.value?.date;             // ex: "2025-09-14"
+    const h = (event.value?.hour || '00:00'); // "HH:mm" ou "HH:mm:ss"
+    if (!d) return false;
+
+    // Normalise en "YYYY-MM-DDTHH:mm:ss" pour le constructeur Date
+    const hhmm = h.length >= 5 ? h.slice(0,5) : '00:00';
+    const isoLike = `${d}T${hhmm}:00`; // secondes ajoutées pour éviter NaN
+    const dt = new Date(isoLike);
+    if (isNaN(dt.getTime())) return false;
+
+    return dt.getTime() < Date.now();
+});
+
 </script>
 
 
 <template>
-    <Head :title="event.name_event" />
+    <Head :title="event.name_event"/>
 
     <AuthenticatedLayout>
         <div class="py-6 bg-[#f9f5f2] min-h-screen">
@@ -136,19 +162,13 @@ const reportEvent = () => {
                         />
                         <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end">
                             <div class="p-6 text-white w-full">
-                                <h1 class="text-3xl md:text-4xl font-bold mb-2">{{ event.name_event }}</h1>
-                                <div class="flex items-center text-lg">
-                                    <i class="fa-solid fa-location-dot mr-2"></i>
-                                    <span>{{ event.location }}</span>
-                                    <span class="mx-3">•</span>
-                                    <i class="fa-regular fa-calendar-days mr-2"></i>
-                                    <span>{{ formatDate(`${event.date}T${event.hour}`) }}</span>
-                                </div>
+                                <h1 class="text-3xl md:text-4xl font-bold mb-2"> * {{ event.name_event }} * </h1>
                             </div>
                         </div>
 
                         <!-- Badge de statut -->
-                        <div class="absolute top-4 right-4 bg-white/90 text-gray-800 px-3 py-1 rounded-full text-sm font-medium shadow-md">
+                        <div
+                            class="absolute top-4 right-4 bg-white/90 text-gray-800 px-3 py-1 rounded-full text-sm font-medium shadow-md">
                             <i class="fa-solid fa-users mr-1"></i>
                             {{ event.participants?.length || 0 }} / {{ event.max_person }} participants
                         </div>
@@ -188,7 +208,6 @@ const reportEvent = () => {
                         </div>
 
 
-
                         <!-- Section Description -->
                         <div class="bg-white rounded-xl shadow-md overflow-hidden">
                             <div class="p-6">
@@ -198,7 +217,8 @@ const reportEvent = () => {
                                     </div>
                                     <h2 class="ml-3 text-xl font-bold text-gray-800">Description</h2>
                                 </div>
-                                <p class="text-gray-700 whitespace-pre-line">{{ event.description || "Aucune description fournie." }}</p>
+                                <p class="text-gray-700 whitespace-pre-line">
+                                    {{ event.description || "Aucune description fournie." }}</p>
 
                                 <div class="mt-6 pt-6 border-t border-gray-100">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -208,7 +228,8 @@ const reportEvent = () => {
                                             </div>
                                             <div>
                                                 <p class="text-sm text-gray-500">Participants</p>
-                                                <p class="font-medium">{{ event.min_person }} - {{ event.max_person }} personnes</p>
+                                                <p class="font-medium">{{ event.min_person }} - {{ event.max_person }}
+                                                    personnes</p>
                                             </div>
                                         </div>
                                         <div class="flex items-start">
@@ -219,11 +240,10 @@ const reportEvent = () => {
                                                 <p class="text-sm text-gray-500">Organisateur</p>
 
 
-
-
-
                                                 <div class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                                                    <Link v-if="event.creator" :href="route('users.show', { user: event.creator.pseudo })" class="text-blue-600 hover:underline">
+                                                    <Link v-if="event.creator"
+                                                          :href="route('users.show', { user: event.creator.pseudo })"
+                                                          class="text-blue-600 hover:underline">
                                                         {{ event.creator.pseudo }}
                                                     </Link>
                                                     <span v-else>Inconnu</span>
@@ -236,9 +256,6 @@ const reportEvent = () => {
     a annulé
   </span>
                                                 </div>
-
-
-
 
 
                                             </div>
@@ -275,26 +292,32 @@ const reportEvent = () => {
                                             <i class="fa-solid fa-users text-xl"></i>
                                         </div>
                                         <h2 class="ml-3 text-xl font-bold text-gray-800">Participants</h2>
-                                        <span class="ml-2 px-3 py-1 bg-gray-100 text-gray-800 text-sm font-medium rounded-full">
+                                        <span
+                                            class="ml-2 px-3 py-1 bg-gray-100 text-gray-800 text-sm font-medium rounded-full">
                             {{ event.participants?.length || 0 }}
                         </span>
                                     </div>
                                     <button
                                         @click="toggleParticipation"
+                                        :disabled="isPastEvent"
                                         :class="{
-        'bg-[#59c4b4] hover:bg-[#4db3a3] text-white': !isParticipating,
-        'bg-red-100 hover:bg-red-200 text-red-700': isParticipating
-    }"
+    'bg-[#59c4b4] hover:bg-[#4db3a3] text-white': !isParticipating && !isPastEvent,
+    'bg-red-100 hover:bg-red-200 text-red-700': isParticipating && !isPastEvent,
+    'bg-gray-200 text-gray-500 cursor-not-allowed': isPastEvent
+  }"
                                         class="px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center"
+                                        :title="isPastEvent ? 'Action indisponible : événement passé' : ''"
                                     >
                                         <i class="fa-solid mr-2" :class="isParticipating ? 'fa-user-minus' : 'fa-user-plus'"></i>
                                         {{ isParticipating ? 'Annuler ma participation' : 'Participer' }}
                                     </button>
+
                                 </div>
 
                                 <div v-if="event.participants && event.participants.length > 0" class="mt-4">
                                     <div class="flex flex-wrap gap-3">
-                                        <div v-for="participant in event.participants" :key="participant.id" class="flex items-center">
+                                        <div v-for="participant in event.participants" :key="participant.id"
+                                             class="flex items-center">
                                             <Link
                                                 :href="route('users.show', { user: participant.pseudo })"
                                                 class="group flex items-center"
@@ -304,7 +327,8 @@ const reportEvent = () => {
                                                     :alt="participant.pseudo"
                                                     class="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:border-[#59c4b4] transition-colors"
                                                 />
-                                                <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-[#59c4b4] transition-colors">
+                                                <span
+                                                    class="ml-2 text-sm font-medium text-gray-700 group-hover:text-[#59c4b4] transition-colors">
                                     {{ participant.pseudo }}
                                 </span>
                                             </Link>
@@ -327,7 +351,8 @@ const reportEvent = () => {
                                         <i class="fa-regular fa-comment-dots text-xl"></i>
                                     </div>
                                     <h2 class="ml-3 text-xl font-bold text-gray-800">Commentaires</h2>
-                                    <span class="ml-2 px-3 py-1 bg-gray-100 text-gray-800 text-sm font-medium rounded-full">
+                                    <span
+                                        class="ml-2 px-3 py-1 bg-gray-100 text-gray-800 text-sm font-medium rounded-full">
                         {{ messages?.length || 0 }}
                     </span>
                                 </div>
@@ -336,8 +361,10 @@ const reportEvent = () => {
                             <!-- Liste des commentaires -->
                             <div class="flex-1 overflow-y-auto p-4 comments-container" style="max-height: 500px;">
                                 <div v-if="messages && messages.length > 0" class="space-y-4">
-                                    <div v-for="message in messages" :key="message.id" class="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                                        <Link :href="route('users.show', { user: message.user.pseudo })" class="flex-shrink-0">
+                                    <div v-for="message in messages" :key="message.id"
+                                         class="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
+                                        <Link :href="route('users.show', { user: message.user.pseudo })"
+                                              class="flex-shrink-0">
                                             <img
                                                 :src="message.user.picture_profil_url || '/images/default-avatar.png'"
                                                 :alt="message.user.pseudo"
@@ -356,7 +383,9 @@ const reportEvent = () => {
                                     {{ formatDate(message.created_at) }}
                                 </span>
                                             </div>
-                                            <p class="mt-1 text-gray-700 text-sm whitespace-pre-line">{{ message.text }}</p>
+                                            <p class="mt-1 text-gray-700 text-sm whitespace-pre-line">{{
+                                                    message.text
+                                                }}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -380,7 +409,6 @@ const reportEvent = () => {
                                     ></textarea>
 
 
-
                                     <button
                                         type="button"
                                         @click="postComment"
@@ -400,8 +428,6 @@ const reportEvent = () => {
                             </div>
 
 
-
-
                         </div>
                     </div>
                 </div>
@@ -417,13 +443,24 @@ const reportEvent = () => {
                             Retour aux événements
                         </Link>
                         <Link
-                            v-if="canEditEvent"
+                            v-if="canEditEvent && !isPastEvent"
                             :href="route('events.edit', event.id)"
                             class="px-4 py-2.5 border border-[#59c4b4] text-[#59c4b4] font-medium rounded-lg hover:bg-[#59c4b4]/10 transition-colors flex items-center justify-center"
                         >
                             <i class="fa-solid fa-pen-to-square mr-2"></i>
                             Modifier l'événement
                         </Link>
+
+                        <span
+                            v-else-if="canEditEvent && isPastEvent"
+                            class="px-4 py-2.5 border border-gray-300 text-gray-400 font-medium rounded-lg bg-gray-100 cursor-not-allowed flex items-center justify-center"
+                            title="Modification indisponible : événement passé"
+                        >
+  <i class="fa-solid fa-pen-to-square mr-2"></i>
+  Modifier l'événement
+</span>
+
+
                     </div>
 
                     <div class="flex flex-col sm:flex-row gap-3">

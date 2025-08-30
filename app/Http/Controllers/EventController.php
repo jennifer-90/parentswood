@@ -10,98 +10,159 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Message;
+use Carbon\Carbon;
+
+use Illuminate\Support\Facades\DB;
+
+
+use Illuminate\Validation\ValidationException;
+
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
+use App\Models\User;
+
 
 
 class EventController extends Controller
 {
+    /*############################## HELPER ########################################*/
     /**
-     * Affiche la liste des événements actifs (non inactifs), paginés par 10 || Page events , no admin
-     * Vue : Events/Index
+     * ==========================================
+     * Helper : redirige en arrière avec un flash.
+     * petit utilitaire pour éviter de répéter return back()->with('flash', [...]) partout.
+     * =============================================
+     */
+    private function backWithFlash(string $message, string $level = 'error')
+    {
+        return back()->with('flash', [$level => $message]);
+    }
+
+    /**
+     * ==============================================
+     * logique réutilisable pour savoir si un événement est déjà passé.
+     *===============================================
+     */
+    private function eventIsPast(Event $event): bool
+    {
+        return $this->eventDateTime($event)->isPast();
+    }
+
+    /***/
+    private function eventDateTime(Event $event): Carbon
+    {
+        // $event->date peut être string ou Carbon ; on normalise en Carbon
+        $base = $event->getAttribute('date') instanceof Carbon
+            ? $event->getAttribute('date')->copy()
+            : Carbon::parse($event->getAttribute('date'));
+
+        $h = $event->hour ? (strlen($event->hour) === 5 ? $event->hour . ':00' : $event->hour) : '00:00:00';
+
+        return $base->setTimeFromTimeString($h);
+    }
+    /*##############################################################################*/
+    /*##############################################################################*/
+    /*##############################################################################*/
+
+    /**
+     * ======================================================================
+     * Affiche la liste des événements actifs & non inactifs | >> Page events
+     * ##[Vue : Events/Index]##
+     * ======================================================================
      */
     public function index(Request $request)
     {
-        $ville = $request->input('ville');
-        $date = $request->input('date');
-        $filter = $request->input('filter');
-        $interetId = $request->input('interet');
+        $selectedCity = $request->input('ville');
+        $selectedDate = $request->input('date');
+        $selectedPeriodFilter = $request->input('filter'); // null | "week" | "month"
+        $selectedInterestId = $request->input('interet');
 
-        $today   = now()->toDateString();
-        $nowTime = now()->format('H:i:s');
+        $now = now();
+        $todayDateString = $now->toDateString();
+        $currentTimeString = $now->format('H:i:s');
 
-        $query = Event::where('inactif', false);
+        // Requête événements actifs
+        $eventsQuery = Event::query()
+            ->where('inactif', false)
+            ->withCount('participants'); // participants_count pour l’affichage
 
-        if ($ville) {
-            $query->where('location', $ville);
+        // >>> Filtre par ville
+        if ($selectedCity) {
+            $eventsQuery->where('location', $selectedCity);
         }
 
-        if ($date) {
-            $query->whereDate('date', $date);
+        // >>> Filtre par date || période
+        if (!empty($selectedDate)) {
+            $eventsQuery->whereDate('date', $selectedDate);
+        } else {
+            if ($selectedPeriodFilter === 'week') {
+                $eventsQuery->whereBetween('date', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
+            } elseif ($selectedPeriodFilter === 'month') {
+                $eventsQuery->whereBetween('date', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
+            }
         }
 
-        if ($filter === 'week') {
-            $query->whereBetween('date', [now()->startOfWeek(), now()->endOfWeek()]);
-        } elseif ($filter === 'month') {
-            $query->whereBetween('date', [now()->startOfMonth(), now()->endOfMonth()]);
+        // >>> Filtre par centre d’intérêt
+        if (!empty($selectedInterestId)) {
+            $eventsQuery->whereHas('centresInteret', function ($relationQuery) use ($selectedInterestId) {
+                $relationQuery->where('centres_interet.id', $selectedInterestId);
+            });
         }
 
-        if ($interetId) {
-            $query->whereHas('centresInteret', fn ($q) => $q->where('centres_interet.id', $interetId));
-        }
-
-        // Compteurs de participants attendus par la vue
-        $query->withCount('participants')
+        // Requête des événements à venir
+        $upcomingEventsQuery = (clone $eventsQuery)
+            ->where(function ($dateTimeQuery) use ($todayDateString, $currentTimeString) {
+                $dateTimeQuery->whereDate('date', '>', $todayDateString)
+                    ->orWhere(function ($sameDayQuery) use ($todayDateString, $currentTimeString) {
+                        $sameDayQuery->whereDate('date', $todayDateString)
+                            ->where('hour', '>=', $currentTimeString);
+                    });
+            })
             ->orderBy('date', 'asc')
             ->orderBy('hour', 'asc');
 
-        $upcomingEvents = (clone $query)
-            ->where(function ($q) use ($today, $nowTime) {
-                $q->whereDate('date', '>', $today)
-                    ->orWhere(function ($q) use ($today, $nowTime) {
-                        $q->whereDate('date', $today)
-                            ->where('hour', '>=', $nowTime);
+        // Requête des événements passés
+        $pastEventsQuery = (clone $eventsQuery)
+            ->where(function ($dateTimeQuery) use ($todayDateString, $currentTimeString) {
+                $dateTimeQuery->whereDate('date', '<', $todayDateString)
+                    ->orWhere(function ($sameDayQuery) use ($todayDateString, $currentTimeString) {
+                        $sameDayQuery->whereDate('date', $todayDateString)
+                            ->where('hour', '<', $currentTimeString);
                     });
             })
-            ->paginate(10)
-            ->withQueryString();
-
-        $pastEvents = Event::where('inactif', false)
-            ->where(function ($q) use ($today, $nowTime) {
-                $q->whereDate('date', '<', $today)
-                    ->orWhere(function ($q) use ($today, $nowTime) {
-                        $q->whereDate('date', $today)
-                            ->where('hour', '<', $nowTime);
-                    });
-            })
-            ->withCount('participants')
             ->orderBy('date', 'desc')
-            ->orderBy('hour', 'desc')
-            ->paginate(10)
-            ->withQueryString();
+            ->orderBy('hour', 'desc');
 
-        $interets = CentreInteret::orderBy('name')->get(['id', 'name']);
+        // Pagination (tout en gardant les filtres dans l’URL)
+        $upcomingEvents = $upcomingEventsQuery->paginate(10)->withQueryString();
+        $pastEvents = $pastEventsQuery->paginate(10)->withQueryString();
 
+        // Liste des centres d’intérêt pour les filtres de la vue
+        $interests = CentreInteret::orderBy('name')->get(['id', 'name']);
+
+        // Renvoyer les données à la vue Inertia
         return Inertia::render('Events/Index', [
             'upcomingEvents' => $upcomingEvents,
-            'pastEvents'     => $pastEvents,
-            'interets'       => $interets,
-            'filters'        => [
-                'ville'   => $ville ?? '',
-                'date'    => $date ?? '',
-                'filter'  => $filter ?? '',
-                'interet' => $interetId ?? '',
-                ]
+            'pastEvents' => $pastEvents,
+            'interets' => $interests,
+            'filters' => [
+                'ville' => $selectedCity ?? '',
+                'date' => $selectedDate ?? '',
+                'filter' => $selectedPeriodFilter ?? '',
+                'interet' => $selectedInterestId ?? '',
+            ],
         ]);
     }
 
 
     /**
+     * =======================================================
      * Affiche le formulaire de création d'un nouvel événement.
-     * Vue : Events/Create
+     * ##[Vue : Events/Create]##
+     * =======================================================
      */
     public function create()
     {
-        $interets = \App\Models\CentreInteret::orderBy('name')->get(['id','name']);
-
+        $interets = CentreInteret::orderBy('name')->get(['id', 'name']);
         return Inertia::render('Events/Create', [
             'interets' => $interets,
         ]);
@@ -109,225 +170,372 @@ class EventController extends Controller
 
 
     /**
-     * Enregistre un nouvel événement après validation.
-     * Gère aussi l'upload de l'image si présente.
-     * Redirige vers la liste des événements avec un message de succès.
+     * =================================================
+     * Enregistre un nouvel événement après validation:
+     * - Valide les champs
+     * - Gère l’upload de l’image
+     * - Normalise l’heure
+     * - Crée l’événement et lie les centres d’intérêt
+     * - Redirige avec un message flash
+     * ===============================================
      */
     public function store(Request $request)
     {
-        // Validation des champs avec messages personnalisés
-        $validated = $request->validate([
+        // 1) Valider la requête (messages personnalisés à la fin)
+        $validatedData = $request->validate([
+            //Requests
             'name_event' => 'required|string|max:255',
             'description' => 'nullable|string',
             'date' => [
                 'required',
                 'date',
-                'after_or_equal:today', function ($attribute, $value, $fail) {
-                    $selectedDate = \Carbon\Carbon::parse($value);
-                    $maxDate = now()->addYear();
+                'after_or_equal:today',
+                function ($attribute, $value, $fail) {
+                    $selectedDate = Carbon::parse($value);
+                    $maxDate = now()->addYear(); // pas plus d’un an dans le futur
                     if ($selectedDate->gt($maxDate)) {
                         $fail('La date ne peut pas être plus d\'un an dans le futur.');
                     }
-                }],
-            //Requests
-            'hour' => 'required',
+                },
+            ],
+            'hour' => 'required|date_format:H:i',
             'location' => 'required|string|max:255',
             'min_person' => 'required|integer|min:1',
             'max_person' => 'required|integer|min:1|gt:min_person',
-            'picture_event' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-
-            'centres_interet'   => 'nullable|array|max:5',
+            'picture_event' => 'nullable|image|mimes:jpeg,png,jpg|max:2048', // Image optionnelle (<= 2 Mo)
+            'centres_interet' => 'nullable|array|max:5',
             'centres_interet.*' => 'integer|exists:centres_interet,id',
         ],
             [//Messages
-            'name_event.required' => 'Le nom de l\'événement est requis.',
-            'date.required' => 'La date est requise.',
-            'date.after_or_equal' => 'La date doit être aujourd\'hui ou une date ultérieure.',
-            'hour.required' => 'L\'heure est requise.',
-            'location.required' => 'Le lieu est requis.',
-            'min_person.required' => 'Le nombre minimum de participants est requis.',
-            'min_person.min' => 'Le nombre minimum de participants doit être d\'au moins 1.',
-            'max_person.required' => 'Le nombre maximum de participants est requis.',
-            'max_person.min' => 'Le nombre maximum de participants doit être d\'au moins 1.',
-            'max_person.gt' => 'Le nombre maximum de participants doit être supérieur au minimum.',
-            'picture_event.image' => 'Le fichier doit être une image.',
-            'picture_event.mimes' => 'L\'image doit être de type :jpeg, png, jpg.',
-            'picture_event.max' => 'L\'image ne doit pas dépasser 2 Mo.',
-        ]);
+                'name_event.required' => 'Le nom de l\'événement est requis.',
+                'date.required' => 'La date est requise.',
+                'date.after_or_equal' => 'La date doit être aujourd\'hui ou une date ultérieure.',
+                'hour.required' => 'L\'heure est requise.',
+                'location.required' => 'Le lieu est requis.',
+                'min_person.required' => 'Le nombre minimum de participants est requis.',
+                'min_person.min' => 'Le nombre minimum de participants doit être d\'au moins 1.',
+                'max_person.required' => 'Le nombre maximum de participants est requis.',
+                'max_person.min' => 'Le nombre maximum de participants doit être d\'au moins 1.',
+                'max_person.gt' => 'Le nombre maximum de participants doit être supérieur au minimum.',
+                'picture_event.image' => 'Le fichier doit être une image.',
+                'picture_event.mimes' => 'L\'image doit être de type :jpeg, png, jpg.',
+                'picture_event.max' => 'L\'image ne doit pas dépasser 2 Mo.',
+            ]);
 
-        // Gestion de l'image uploadée
+        // 2) Normaliser l’heure en "HH:MM:SS"
+        $validatedData['hour'] = Carbon::createFromFormat('H:i', $validatedData['hour'])
+            ->format('H:i:s');
+
+        // 3) Gérer l’image si fournie ; sinon, on stocke null (image par défaut côté vue)
         if ($request->hasFile('picture_event')) {
-            $validated['picture_event'] = $request->file('picture_event')->store('events', 'public');
-        } else {// Image par défaut
-            $validated['picture_event'] = null;
+            // stocke dans storage/app/public/events et renvoie un chemin relatif "events/xxx.jpg"
+            $validatedData['picture_event'] = $request->file('picture_event')->store('events', 'public');
+        } else {
+            $validatedData['picture_event'] = null;
         }
 
-        $validated['created_by'] = auth()->id();
+        // 4) Associer le créateur (utilisateur connecté)
+        $validatedData['created_by'] = auth()->id();
 
-        $event = Event::create($validated);
+        // 5) Créer l’événement
+        $event = Event::create($validatedData);
 
+        // 6) Lier les centres d’intérêt (table pivot) si fournis
         $event->centresInteret()->sync($request->input('centres_interet', []));
-        return redirect()->route('events.index')->with('flash', ['success' => 'Événement créé !']);
+
+        // 7) Rediriger vers la liste avec un message de succès
+        return redirect()
+            ->route('events.index')
+            ->with('flash', ['success' => 'Événement créé !']);
     }
 
+
     /**
+     * ======================================================
      * Affiche le formulaire de modification d'un événement.
-     * Vue : Events/Edit
+     * ##[Vue : Events/Edit]##
+     * =====================================================
      */
     public function edit(Event $event)
     {
-        // Vérifie que seul le créateur ou un admin/super-admin peut modifier
-        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            abort(403, 'Action non autorisée.');
+        // 1) Interdire la modification si l'événement est déjà passé
+        if ($this->eventIsPast($event)) {
+            return back()->with('flash', ['error' => "Modification interdite : événement passé."]);
         }
 
-        $interets = CentreInteret::orderBy('name')->get(['id','name']);
+        // Seul le créateur peut modifier
+        if (auth()->id() !== $event->created_by) {
+            return back()->with('flash', ['error' => 'Action non autorisée.']);
+        }
 
-        // ⬅️ Important : on charge la relation sur l’event
+        $interestOptions = CentreInteret::orderBy('name')->get(['id', 'name']);
         $event->load('centresInteret:id,name');
 
         return Inertia::render('Events/Edit', [
-            'event'    => $event,
-            'interets' => $interets,
-
+            'event' => $event,
+            'interets' => $interestOptions,
         ]);
     }
 
+
     /**
-     * reçoit le formulaire rempli, valide, met à jour l’event, gère l’upload/suppression d’image,
-     * fait le sync() des centres d’intérêt, puis renvoie une réponse (JSON/redirect).*
+     * ========================================================================
+     * Reçoit le formulaire, valide, met à jour l'événement,
+     * gère l'upload/suppression d'image et la sync des centres d'intérêt.
+     * Répond en JSON (succès/erreur).
+     * =======================================================================
      */
     public function update(Request $request, Event $event)
     {
-        // Autorisation
-        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return response()->json(['message' => 'Action non autorisée.'], 403);
+        $user = auth()->user();
+        if (!$user) return redirect()->route('login');
+        if ($user->id !== $event->created_by) {
+            return back()->with('flash', ['error' => 'Action non autorisée.']);
+        }
+
+        if ($this->eventIsPast($event)) {
+            return $this->backWithFlash("Modification interdite : événement passé.");
+        }
+        if ($event->cancelled_at) {
+            return $this->backWithFlash("Modification interdite : événement annulé.");
         }
 
         try {
-            // Règles de base
             $rules = [
-                'name_event'  => 'required|string|max:255',
-                'description' => 'nullable|string',
-                'date'        => [
-                    'required','date','after_or_equal:today',
-                    function ($attribute, $value, $fail) {
-                        $selectedDate = \Carbon\Carbon::parse($value);
-                        $maxDate = now()->addYear();
-                        if ($selectedDate->gt($maxDate)) {
-                            $fail('La date ne peut pas être plus d\'un an dans le futur.');
-                        }
+                'name_event'         => ['required','string','max:255'],
+                'description'        => ['nullable','string'],
+                'date'               => [
+                    'bail','required','date','after_or_equal:today',
+                    function ($attribute,$value,$fail): void {
+                        $d = \Carbon\Carbon::make($value);
+                        if (!$d) { $fail('La date est invalide.'); return; }
+                        if ($d->gt(now()->addYear())) $fail('La date ne peut pas être plus d’un an dans le futur.');
                     },
                 ],
-                'hour'        => 'required',
-                'location'    => 'required|string|max:255',
-                'min_person'  => 'required|integer|min:1',
-                'max_person'  => 'required|integer|min:1|gt:min_person',
-                'picture_event' => ['nullable'],
-
-                'centres_interet'   => 'nullable|array|max:5',
-                'centres_interet.*' => 'integer|exists:centres_interet,id',
-
+                'hour'               => ['required','date_format:H:i'],
+                'location'           => ['required','string','max:255'],
+                'min_person'         => ['required','integer','min:1'],
+                'max_person'         => ['required','integer','min:1','gt:min_person'],
+                'picture_event'      => ['nullable'],
+                'centres_interet'    => ['nullable','array','max:5'],
+                'centres_interet.*'  => ['integer','exists:centres_interet,id'],
             ];
-
             if ($request->hasFile('picture_event')) {
                 $rules['picture_event'] = ['image','mimes:jpeg,png,jpg','max:2048'];
             }
 
-            $messages = [
-                'name_event.required' => 'Le nom de l\'événement est requis.',
+            $validated = $request->validate($rules, [
+                'name_event.required' => "Le nom de l'événement est requis.",
                 'date.required'       => 'La date est requise.',
-                'date.after_or_equal' => 'La date doit être aujourd\'hui ou une date ultérieure.',
-                'hour.required'       => 'L\'heure est requise.',
+                'date.after_or_equal' => "La date doit être aujourd'hui ou ultérieure.",
+                'hour.required'       => "L'heure est requise.",
+                'hour.date_format'    => "L'heure doit être au format HH:mm.",
                 'location.required'   => 'Le lieu est requis.',
-                'min_person.required' => 'Le nombre minimum de participants est requis.',
-                'min_person.min'      => 'Le nombre minimum de participants doit être d\'au moins 1.',
-                'max_person.required' => 'Le nombre maximum de participants est requis.',
-                'max_person.min'      => 'Le nombre maximum de participants est de 1 au minimum.',
-                'max_person.gt'       => 'Le nombre maximum de participants doit être supérieur au minimum.',
+                'min_person.required' => 'Le minimum de participants est requis.',
+                'min_person.min'      => 'Le minimum doit être au moins 1.',
+                'max_person.required' => 'Le maximum de participants est requis.',
+                'max_person.gt'       => 'Le maximum doit être supérieur au minimum.',
                 'picture_event.image' => 'Le fichier doit être une image.',
-                'picture_event.mimes' => 'L\'image doit être de type :jpeg, png, jpg.',
-                'picture_event.max'   => 'L\'image ne doit pas dépasser 2 Mo.',
-            ];
+                'picture_event.mimes' => 'Formats autorisés : jpeg, png, jpg.',
+                'picture_event.max'   => "L'image ne doit pas dépasser 2 Mo.",
+            ]);
 
-            $validated = $request->validate($rules, $messages);
+            if (isset($validated['hour'])) {
+                $validated['hour'] = \Carbon\Carbon::createFromFormat('H:i', $validated['hour'])->format('H:i:s');
+            }
 
-            // Gestion de l'image
+            $oldImage = $event->picture_event;
             if ($request->input('picture_event') === 'REMOVE_IMAGE') {
-                // Supprimer l’ancienne si présente
-                if ($event->picture_event) {
-                    Storage::delete('public/'.$event->picture_event);
-                }
                 $validated['picture_event'] = null;
+                if ($oldImage) \Storage::disk('public')->delete($oldImage);
             } elseif ($request->hasFile('picture_event')) {
-                // Remplacement par une nouvelle
-                if ($event->picture_event) {
-                    Storage::delete('public/'.$event->picture_event);
-                }
-                $validated['picture_event'] = $request->file('picture_event')->store('events', 'public');
+                $validated['picture_event'] = $request->file('picture_event')->store('events','public');
+                if ($oldImage) \Storage::disk('public')->delete($oldImage);
             } else {
-                // Ne pas toucher au champ si rien n'a changé
                 unset($validated['picture_event']);
             }
 
-            $event->update($validated);
-            $event->centresInteret()->sync($request->input('centres_interet', []));
+            $watched  = ['name_event','date','hour','location','description','min_person','max_person','picture_event'];
+            $original = $event->only($watched);
+            if (isset($original['hour']) && strlen((string)$original['hour']) === 5) $original['hour'] .= ':00';
+            if ($original['date'] instanceof \Carbon\Carbon) $original['date'] = $original['date']->format('Y-m-d');
 
+            // ⚠️ sortir la pivot du validated
+            $ciIds = $request->input('centres_interet', []);
+            unset($validated['centres_interet']);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'L\'événement a été mis à jour avec succès.'
-            ]);
+            // ⚠️ FIX: préciser la table dans les pluck pour éviter l’ambiguïté
+            $oldTags = $event->centresInteret()
+                ->pluck('centres_interet.id')
+                ->sort()->values()->all();
+
+            $changes = [];
+
+            \DB::transaction(function () use ($event, $validated, $watched, $original, $oldTags, $ciIds, &$changes) {
+
+                $toFill = array_intersect_key($validated, array_flip($event->getFillable()));
+                $event->fill($toFill);
+
+                $dirty = $event->getDirty();
+                $event->save();
+
+                foreach ($dirty as $field => $newValue) {
+                    if (in_array($field, $watched, true)) {
+                        if ($field === 'date' && $newValue instanceof \Carbon\Carbon) $newValue = $newValue->format('Y-m-d');
+                        if ($field === 'hour' && strlen((string)$newValue) === 5)   $newValue .= ':00';
+                        $changes[$field] = [
+                            'old' => (string)($original[$field] ?? ''),
+                            'new' => (string)$newValue,
+                        ];
+                    }
+                }
+
+                $event->centresInteret()->sync($ciIds);
+
+                // ⚠️ FIX: idem ici
+                $newTags = $event->centresInteret()
+                    ->pluck('centres_interet.id')
+                    ->sort()->values()->all();
+
+                if ($oldTags !== $newTags) {
+                    $oldNames = \App\Models\CentreInteret::whereIn('id', $oldTags)->pluck('name')->sort()->values()->all();
+                    $newNames = \App\Models\CentreInteret::whereIn('id', $newTags)->pluck('name')->sort()->values()->all();
+                    $changes['centres_interet'] = [
+                        'old' => implode(', ', $oldNames),
+                        'new' => implode(', ', $newNames),
+                    ];
+                }
+            });
+
+            if (!empty($changes)) {
+                $this->notifyParticipantsInline($event, 'updated', $changes);
+                return redirect()->route('events.show', $event->id)
+                    ->with('flash', ['success' => "L'événement a été mis à jour avec succès."]);
+            }
+
+            return redirect()->route('events.show', $event->id)
+                ->with('flash', ['info' => "Aucune modification détectée."]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur de validation',
-                'errors'  => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            \Log::error('Erreur lors de la mise à jour de l\'événement: '.$e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Une erreur est survenue lors de la mise à jour de l\'événement.',
-            ], 500);
+            return back()->withErrors($e->errors())->withInput();
+        } catch (\Throwable $e) {
+            \Log::error('event.update failed', [
+                'event_id' => $event->id,
+                'user_id'  => auth()->id(),
+                'error'    => $e->getMessage(),
+            ]);
+            return back()->with('flash', ['error' => "Une erreur est survenue lors de la mise à jour."]);
         }
+    }
+
+    /**
+     * =========================================================
+     * Faire rejoindre l'événement à l'utilisateur connecté.
+     * Règles :
+     * - l'utilisateur doit être connecté
+     * - l'événement ne doit pas être passé, annulé ou inactif
+     * - l'utilisateur ne doit pas déjà être dans les participants
+     * - la capacité ne doit pas être dépassée
+     * Retour : redirection arrière avec message flash.
+     * =======================================================
+     */
+    public function join(Event $event)
+    {
+        // 1) L'utilisateur doit être connecté
+        if (!auth()->check()) {
+            return redirect()->route('login');
+        }
+
+        $userId = auth()->id();
+
+        // 2) Garde-fous côté événement
+        if ($this->eventIsPast($event)) {
+            return back()->with('flash', ['error' => "Action impossible : l'événement est déjà passé."]);
+        }
+        if ($event->inactif) {
+            return back()->with('flash', ['error' => "Action impossible : l'événement est inactif."]);
+        }
+        if ($event->cancelled_at) {
+            return back()->with('flash', ['error' => "Action impossible : l'événement a été annulé."]);
+        }
+
+        // 3) Déjà participant ?
+        $alreadyIn = $event->participants()->where('user_id', $userId)->exists();
+        if ($alreadyIn) {
+            return back()->with('flash', ['error' => 'Tu participes déjà à cet événement.']);
+        }
+
+        // 4) Capacité atteinte ?
+        $currentCount = $event->participants()->count();
+        if ($currentCount >= (int)$event->max_person) {
+            return back()->with('flash', ['error' => 'Désolé, le maximum de particpant est atteint.']);
+        }
+
+        // 5) Ajout (idempotent) à la pivot
+        $event->participants()->syncWithoutDetaching([$userId]);
+
+        return back()->with('flash', ['success' => 'Tu as rejoint cet évènement !']);
     }
 
 
     /**
-     * Permet à un utilisateur de rejoindre un événement.
-     * Crée une relation dans la table pivot participants.
+     * ====================================================================================
+     * Basculer la participation de l'utilisateur (participer <-> annuler).
+     * Règles :
+     * - l'utilisateur doit être connecté
+     * - si on essaye d'AJOUTER : mêmes gardes que join() (pas passé/inactif/annulé + capacité)
+     * - si on SUPPRIME : (tu as choisi de bloquer aussi quand c'est passé)
+     * Retour : redirection vers la page show + message flash.
+     * ======================================================================================
      */
-    public function join(Event $event)
-    {
-        if ($event->participants()->where('user_id', auth()->id())->exists()) {
-            return back()->with('flash', ['error' => 'Tu participes déjà à cet événement.']);
-        }
-
-        $event->participants()->attach(auth()->id());
-            return back()->with('flash', ['success' => 'Tu as rejoint cet évènement !']);
-    }
-
-
     public function toggleParticipation(Event $event)
     {
-        $user = auth()->user();
+        // 1) L'utilisateur doit être connecté
+        if (!auth()->check()) {
+            return redirect()->route('login');
+        }
 
-        // Vérifier si l'utilisateur participe déjà à l'événement
-        $isParticipating = $event->participants()->where('user_id', $user->id)->exists();
+        $userId = auth()->id();
+
+        // 2) AUCUNE action possible si l’événement est passé
+        if ($this->eventIsPast($event)) {
+            return redirect()
+                ->route('events.show', $event->id)
+                ->with('flash', ['error' => "Action impossible : l'événement est déjà passé."]);
+        }
+
+        // 3) Est-ce que l'utilisateur participe déjà ?
+        $isParticipating = $event->participants()->where('user_id', $userId)->exists();
 
         if ($isParticipating) {
-            // Retirer l'utilisateur des participants
-            $event->participants()->detach($user->id);
+            // 3.a) Annuler la participation
+            $event->participants()->detach($userId);
             $message = 'Participation annulée avec succès.';
         } else {
-            // Ajouter l'utilisateur aux participants
-            $event->participants()->attach($user->id);
+            // 3.b) Ajouter la participation -> mêmes gardes que join()
+            if ($event->inactif) {
+                return redirect()
+                    ->route('events.show', $event->id)
+                    ->with('flash', ['error' => "Action impossible : l'événement est inactif."]);
+            }
+            if ($event->cancelled_at) {
+                return redirect()
+                    ->route('events.show', $event->id)
+                    ->with('flash', ['error' => "Action impossible : l'événement a été annulé."]);
+            }
+
+            $currentCount = $event->participants()->count();
+            if ($currentCount >= (int)$event->max_person) {
+                return redirect()
+                    ->route('events.show', $event->id)
+                    ->with('flash', ['error' => 'La capacité maximale est atteinte.']);
+            }
+
+            $event->participants()->syncWithoutDetaching([$userId]);
             $message = 'Participation enregistrée avec succès.';
         }
 
-        // Recharger les relations pour mettre à jour le compteur
+        // 4) Rafraîchir la relation (compteur/affichage)
         $event->load('participants');
 
         return redirect()
@@ -337,220 +545,605 @@ class EventController extends Controller
 
 
     /**
-     * Affiche les détails d’un événement et les messages/commentaires associés.
+     * ==============================================================================
+     * Affiche la page "détails" d’un événement + la liste des commentaires.
+     *
+     * Règles :
+     * - L’utilisateur doit être connecté (sinon -> login).
+     * - Si l’événement est inactif et que l’utilisateur n’est NI créateur NI admin,
+     *   on le redirige vers la liste des événements avec un message.
+     * - On charge les relations utiles (creator, participants, centres d’intérêt).
+     * - On récupère les messages avec leur auteur.
+     * - On envoie au front des indicateurs : can_edit (seul le créateur), is_past.
+     * ==============================================================================
      */
     public function show(Event $event)
     {
-        if (!auth()->check()) return redirect()->route('login');
-
-        if ($event->inactif && !auth()->user()->hasAnyRole(['Admin', 'Super-admin']) && auth()->id() !== $event->created_by) {
-            return redirect()->route('events.index')->with('flash', ['error' => "Cet événement n'est plus disponible."]);
+        // 0) L’utilisateur doit être connecté
+        if (!auth()->check()) {
+            return redirect()->route('login');
         }
 
+        // 1) Prépare quelques infos sur l’utilisateur courant
+        $user = auth()->user();
+        $isCreator = $user->id === $event->created_by;
+        $isAdmin = $user->hasAnyRole(['Admin', 'Super-admin']);
+
+        // 2) Si l’événement est inactif et que l’utilisateur n’est pas admin, on ne lui montre pas la page de détails.
+        if ($event->inactif && !$isAdmin) {
+            return redirect()
+                ->route('events.index')
+                ->with('flash', ['error' => "Cet événement n'est plus disponible."]);
+        }
+
+        // 3) Charger les relations nécessaires pour l’affichage
         $event->load([
             'creator:id,pseudo',
             'participants:id,pseudo,picture_profil',
             'centresInteret:id,name',
         ]);
 
-        $messages = Message::where('event_id', $event->id)
+        // 4) Récupérer les commentaires (avec l’auteur de chaque message)
+        $messages = Message::query()
+            ->where('event_id', $event->id)
             ->with('user:id,pseudo,picture_profil')
             ->latest()
             ->get();
 
+        // 5) Renvoyer la page Inertia avec toutes les données utiles
         return Inertia::render('Events/Show', [
-            'event' => [
-                ...$event->toArray(),
-                'creator'      => $event->creator,
+            'event' => array_merge($event->toArray(), [
+                'creator' => $event->creator,
                 'participants' => $event->participants,
-                'created_by'   => $event->created_by,
-                'can_edit'     => auth()->id() === $event->created_by || auth()->user()->hasAnyRole(['Admin', 'Super-admin']),
-            ],
-            'messages'          => $messages,
-            'already_reported'  => session()->has("reported_event_{$event->id}"),
+                'created_by' => $event->created_by,
+
+                // Seul le créateur peut modifier (pas l’admin, sauf s’il est aussi créateur)
+                'can_edit' => $isCreator,
+
+                // Indicateur pratique pour bloquer des actions côté front
+                'is_past' => $this->eventIsPast($event),
+            ]),
+            'messages' => $messages,
+            'already_reported' => session()->has("reported_event_{$event->id}"),
         ]);
     }
 
 
     /**
-     * Désactive un événement
+     * ===========================================================================
+     * Désactive (met "inactif" = true) un événement.
      *
+     * Règles d'accès :
+     * - Le créateur de l'événement OU un Admin/Super-admin peuvent désactiver.
+     * ==========================================================================
      */
     public function deactivate(Request $request, Event $event): RedirectResponse|JsonResponse
     {
-        // Créateur OU Admin/Super-admin
-        if (auth()->id() !== $event->created_by && !auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return $request->wantsJson()
-                ? response()->json(['success' => false, 'message' => 'Action non autorisée.'], 403)
-                : back()->with('error', 'Action non autorisée.');
+        // 0) Vérifier l'authentification : sinon -> login
+        if (!auth()->check()) {
+            return redirect()->route('login');
         }
 
-        $event->update([
-            'inactif' => true,
-        ]);
+        // 1) Vérifier les permissions (créateur OU admin/super-admin)
+        $user = auth()->user();
+        $isCreator = ($user->id === $event->created_by);
+        $isAdmin = $user->hasAnyRole(['Admin', 'Super-admin']);
 
-        // Si appel AJAX (axios/fetch) -> JSON. Sinon -> redirection + flash (Inertia).
+        if (!($isCreator || $isAdmin)) {
+            return back()->with('flash', ['error' => 'Action non autorisée.']);
+        }
+
+        // 2) Si déjà inactif, on évite un write inutile et on informe l'utilisateur
+        if ($event->inactif) {
+            return back()->with('flash', ['info' => "L'événement est déjà désactivé."]);
+        }
+
+        //Notif mail
+        $this->notifyParticipantsInline($event, 'deactivated');
+
+        // 3) Mettre l’événement en inactif
+        $event->update(['inactif' => true]);
+
+        // 4) Réponse de succès :
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs."
+                'message' => "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs.",
             ]);
         }
 
-        return redirect()->route('events.index')
+        return redirect()
+            ->route('events.index')
             ->with('flash', ['success' => "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs."]);
     }
 
 
-
+    /**
+     * ===================================================================
+     * Supprime "logiquement" un événement (ici, on délègue à deactivate).
+     * ===================================================================
+     */
     public function destroy(Request $request, Event $event)
     {
+        // On réutilise exactement la même logique que deactivate()
         return $this->deactivate($request, $event);
     }
 
 
     /**
-     * Active ou désactive un événement (bascule le champ 'inactif').
-     * Admin/Super-admin uniquement.
+     * =================================================================
+     * Active / Désactive un événement (toggle du champ 'inactif').
+     *
+     * Règles d'accès :
+     * - Réservé aux Admin/Super-admin.
+     *
+     * Garde-fous métier :
+     * - Événement passé : on bloque le toggle (message explicite).
+     * - Événement annulé par le créateur : on bloque la réactivation.
+     *=================================================================
      */
-    public function toggleActive(Event $event)
+    public function toggleActive(Request $request, Event $event)
     {
-        // Admin / Super-admin uniquement
-        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
-            return back()->with('flash', ['error'   => 'Action non autorisée.']);
+        // 0) Auth : si pas connecté -> page de login
+        if (!auth()->check()) {
+            return redirect()->route('login');
         }
-        // Si l’événement a été annulé par le créateur -> non réactivable
+
+        // 1) Droits : Admin / Super-admin uniquement
+        $user = auth()->user();
+        $isAdmin = $user->hasAnyRole(['Admin', 'Super-admin']);
+        if (!$isAdmin) {
+            return back()->with('flash', ['error' => 'Action non autorisée.']);
+        }
+
+        // 2) Règles
+        // 2.a) Événement passé -> on ne permet pas le toggle
+        if ($this->eventIsPast($event)) {
+            return redirect()
+                ->route('events.show', $event->id)
+                ->with('flash', ['error' => "Action impossible : l'événement est déjà passé."]);
+        }
+
+        // 2.b) Si l’événement a été annulé par le créateur -> on empêche la réactivation
         if ($event->cancelled_at && $event->inactif === true) {
-            return back()->with('flash', ['success' => $event->inactif ? 'Événement désactivé.' : 'Événement activé.']);
+            return back()->with('flash', ['error' => "Action impossible : l'événement a été annulé par le créateur."]);
         }
+
+        // 3) Basculer l'état "inactif"
         $event->update(['inactif' => !$event->inactif]);
-        return back()->with('success',
-            $event->inactif ? 'Événement désactivé.' : 'Événement activé.'
-        );
+
+        // 4) Réponse de succès
+        $message = $event->inactif
+            ? 'Événement désactivé.'
+            : 'Événement activé.';
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => ['inactif' => $event->inactif],
+            ]);
+        }
+
+        return back()->with('flash', ['success' => $message]);
     }
 
 
     /**
-     * Marque un événement comme confirmé et actif.
-     * Utilisé dans une logique de validation manuelle.
-     * Admin/Super-admin uniquement.
+     * ============================================================
+     * Valide (accepte) un événement : le rend confirmé et actif.
+     * Règles :
+     * - Doit être connecté (sinon redirection login)
+     * - Doit être Admin / Super-admin (sinon back() + flash)
+     * - On refuse d’accepter un événement annulé ou déjà passé
+     * =========================================================
      */
     public function accept(Event $event)
     {
-        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+        // 0) Auth
+        if (!auth()->check()) {
+            return redirect()->route('login');
+        }
+
+        // 1) Droits
+        $user = auth()->user();
+        if (!$user->hasAnyRole(['Admin', 'Super-admin'])) {
             return back()->with('flash', ['error' => "Action non autorisée."]);
         }
+
+        // 2) Garde-fous métier
+        if ($event->cancelled_at) {
+            return back()->with('flash', ['error' => "Impossible d'accepter : l'événement a été annulé par le créateur."]);
+        }
+
+        if ($this->eventIsPast($event)) {
+            return back()->with('flash', ['error' => "Impossible d'accepter : l'événement est déjà passé."]);
+        }
+
+        // Déjà accepté ?
+        if ($event->confirmed && !$event->inactif) {
+            return back()->with('flash', ['info' => "L'événement est déjà accepté et actif."]);
+        }
+
+        // 3) Mise à jour
         $event->update([
             'confirmed' => true,
             'inactif' => false,
-            'validated_by_id' => auth()->id(),
+            'validated_by_id' => $user->id,
             'validated_at' => now(),
         ]);
-
+        // 4) Ajouter le créateur comme participant (si pas déjà)
         $event->participants()->syncWithoutDetaching([$event->created_by]);
 
+        // 5) Succès
         return back()->with('flash', ['success' => 'Événement accepté.']);
     }
 
+
     /**
-     * Refuse un événement (le rend inactif et non confirmé).
-     * Admin/Super-admin uniquement.
+     * =========================================================================
+     * Refuse un événement : le rend non confirmé et inactif.
+     * Règles :
+     * - Doit être connecté (sinon redirection login)
+     * - Doit être Admin / Super-admin (sinon back() + flash)
+     * - Inutile de refuser s’il est déjà annulé (il est de toute façon inactif)
+     * ========================================================================
      */
     public function refuse(Event $event)
     {
-        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+        // 0) Auth
+        if (!auth()->check()) {
+            return redirect()->route('login');
+        }
+
+        // 1) Droits
+        $user = auth()->user();
+        if (!$user->hasAnyRole(['Admin', 'Super-admin'])) {
             return back()->with('flash', ['error' => "Action non autorisée."]);
         }
 
+        // 2) Si déjà annulé, le refuser ne change rien de plus : informer simplement
+        if ($event->cancelled_at) {
+            return back()->with('flash', ['info' => "L'événement a déjà été annulé par le créateur."]);
+        }
+
+        // Déjà refusé/inactif ?
+        if (!$event->confirmed && $event->inactif) {
+            return back()->with('flash', ['info' => "L'événement est déjà refusé (inactif)."]);
+        }
+
+        // 3) Mise à jour
         $event->update([
             'confirmed' => false,
             'inactif' => true,
-            'validated_by_id' => auth()->id(),
+            'validated_by_id' => $user->id,
             'validated_at' => now(),
         ]);
 
+        // 4) Succès
         return back()->with('flash', ['success' => 'Événement refusé.']);
     }
 
-    public function exportEvents()
-    {
-        $events = Event::select('id', 'name_event', 'date', 'hour', 'location')->get();
 
-        $csv = fopen('php://output', 'w');
-        $filename = 'evenements_' . now()->format('Y-m-d_H-i-s') . '.csv';
-
-        return response()->streamDownload(function () use ($events, $csv) {
-            fputcsv($csv, ['ID', 'Nom de l\'événement', 'Date', 'Heure', 'Lieu']);
-            foreach ($events as $event) {
-                fputcsv($csv, [
-                    $event->id,
-                    $event->name_event,
-                    $event->date,
-                    $event->hour,
-                    $event->location,
-                ]);
-            }
-            fclose($csv);
-        }, $filename);
-    }
-
-
-    //Annuler event
+    /**
+     * ========================================
+     * Annule un événement (créateur uniquement)
+     * ========================================
+     * */
     public function cancel(Event $event)
     {
-        // Créateur SEULEMENT
-        if (auth()->id() !== $event->created_by) {
-            return back()->with('flash', ['error'   => 'Seul le créateur peut annuler cet événement.']);
+        // 0) Authentification : si l’utilisateur n’est pas connecté, on l’envoie au login
+        if (!auth()->check()) {
+            return redirect()->route('login');
         }
-
-        // Si déjà annulé, on ne fait rien
+        // 1) Autorisation : SEUL le créateur peut annuler
+        $currentUserId = auth()->id();
+        if ($currentUserId !== $event->created_by) {
+            return back()->with('flash', ['error' => 'Seul le créateur peut annuler cet événement.']);
+        }
+        // 2) Règle métier : on n’annule pas un événement déjà passé
+        if ($this->eventIsPast($event)) {
+            return back()->with('flash', ['error' => "Action impossible : l'événement est déjà passé."]);
+        }
+        // 3) Idempotence : si déjà annulé, on ne fait rien
         if ($event->cancelled_at) {
-            return back()->with('flash', ['info'    => 'Cet événement est déjà annulé.']);
+            return back()->with('flash', ['info' => 'Cet événement est déjà annulé.']);
         }
-
+        // 4) Mise à jour : on désactive et on pose les méta-données d’annulation
         $event->update([
-            'inactif'      => true,
-            'cancel_note'  => 'Événement annulé le ' . now()->format('d/m/Y à H:i'),
+            'inactif' => true,
+            'cancel_note' => 'Événement annulé le ' . now()->format('d/m/Y à H:i'),
             'cancelled_at' => now(),
-            'cancelled_by' => auth()->id(), // = créateur
+            'cancelled_by' => $currentUserId,
         ]);
 
+        //Notif par mail
+        $this->notifyParticipantsInline($event, 'cancelled');
+
+        // 5) Retour avec confirmation
         return back()->with('flash', ['success' => "L'événement a été annulé (action définitive)."]);
     }
 
 
-
-// Empêche plusieurs incréments par la même session
+    /**
+     * =====================================================================
+     * Signale un événement (bouton "Signaler").
+     *
+     * Règles :
+     * - L’utilisateur doit être connecté (sinon → page de login).
+     * - On n’autorise qu’UN signalement par événement ET par session.
+     *   (Si l’utilisateur a déjà signalé cet événement dans cette session,
+     *    on n’incrémente pas une seconde fois.)
+     * - On incrémente "reports_count" puis on marque la session.
+     * - On revient toujours en arrière avec un message flash.
+     * ====================================================================
+     */
     public function report(Event $event)
     {
-        // Tous les users sont loggés chez toi, donc ok.
-        $key = "reported_event_{$event->id}";
-        if (session()->has($key)) {
-            return back()->with('flash', ['success' => 'Merci, vous avez déjà signalé cet événement.']);
+        // 0) Auth : si l'utilisateur n'est pas connecté → login
+        if (!auth()->check()) {
+            return redirect()->route('login');
         }
 
-        // Incrément simple et marquage session
-        $event->increment('reports_count');
-        session()->put($key, true);
+        // 1) Clé de session pour mémoriser "déjà signalé"
+        //    On ajoute l'ID user pour éviter les collisions si la même session
+        //    est réutilisée par plusieurs comptes sur le même navigateur.
+        $sessionKey = "reported_event_{$event->id}_user_" . auth()->id();
 
-        return back()->with('flash', ['success' => 'Merci pour votre signalement.']);
+        // 2) Si déjà signalé dans CETTE session → on ne refait rien
+        if (session()->has($sessionKey)) {
+            return back()->with('flash', ['info' => 'Vous avez déjà signalé cet événement. Merci !']);
+        }
+
+        try {
+            // 3) Incrémente le compteur en base (+1)
+            $event->increment('reports_count');
+
+            // 4) Marque la session pour empêcher un second clic
+            session()->put($sessionKey, true);
+
+            // 5) Retour avec confirmation
+            return back()->with('flash', ['success' => 'Merci pour votre signalement.']);
+        } catch (\Throwable $e) {
+            // Log technique + message utilisateur propre
+            logger()->error("Erreur lors du signalement de l'événement {$event->id}", [
+                'user_id' => auth()->id(),
+                'message' => $e->getMessage(),
+            ]);
+
+            return back()->with('flash', [
+                'error' => "Impossible d'enregistrer votre signalement pour le moment."
+            ]);
+        }
     }
 
 
-
-// Remise à zéro du compteur (à déclencher côté Admin/Super-admin)
+    /**
+     * =============================================================
+     * Remet à zéro le compteur de signalements d’un événement.
+     * - Si non connecté → redirection vers le login
+     * - Si pas Admin/Super-admin → retour arrière + message d'erreur
+     * - Sinon → met reports_count=0 et retourne un message de succès
+     * =============================================================
+     */
     public function clearReports(Event $event)
     {
-        if (!auth()->user()->hasAnyRole(['Admin','Super-admin'])) {
-            abort(403);
+        // 0) Auth
+        if (!auth()->check()) {
+            return redirect()->route('login');
         }
 
-        $event->update(['reports_count' => 0]);
+        // 1) Droits
+        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+            return back()->with('flash', ['error' => 'Action non autorisée.']);
+        }
 
-        // Optionnel : vider les “déjà signalé” de toutes les sessions n’est pas faisable,
-        // mais ce n’est pas gênant : au pire l’utilisateur verra “déjà signalé” jusqu’à
-        // la fin de sa session.
-        return back()->with('flash', ['success' => 'Signalements remis à zéro.']);
+        try {
+            // 2) Reset du compteur
+            $event->update(['reports_count' => 0]);
+
+            // Note : on ne peut pas “vider” les sessions des autres utilisateurs.
+            // Ils verront encore "déjà signalé" jusqu’à fin de leur session.
+            return back()->with('flash', ['success' => 'Signalements remis à zéro.']);
+        } catch (\Throwable $e) {
+            logger()->error("clearReports failed for event {$event->id}", [
+                'user_id' => auth()->id(),
+                'message' => $e->getMessage(),
+            ]);
+            return back()->with('flash', ['error' => "Impossible de remettre les signalements à zéro."]);
+        }
     }
+
+
+    /**
+     * ======================================================
+     * Exporte la liste des événements en CSV (UTF-8 + BOM).
+     * - Si non connecté → redirection login
+     * - Si pas Admin/Super-admin → back() + message flash
+     * =====================================================
+     */
+    public function exportEvents()
+    {
+        // 0) Auth
+        if (!auth()->check()) {
+            return redirect()->route('login');
+        }
+
+        // 1) Droits : Admin / Super-admin uniquement
+        if (!auth()->user()->hasAnyRole(['Admin', 'Super-admin'])) {
+            return back()->with('flash', ['error' => "Action non autorisée."]);
+        }
+
+        // 2) Nom de fichier (ex: evenements_2025-09-14_10-42-00.csv)
+        $filename = 'parentswood_evenements_' . now()->format('Y-m-d_H-i-s') . '.csv';
+
+
+        // 3) Stream du CSV
+        return response()->streamDownload(function () {
+            // Ouvre un "flux" lié à la réponse HTTP
+            $handle = fopen('php://output', 'w');
+
+            // (Important pour Excel) Ajoute le BOM UTF-8
+            fwrite($handle, "\xEF\xBB\xBF");
+
+            // Écrit l'en-tête | délimiteur ';' (3e param de fputcsv) pour Excel FR
+            fputcsv($handle, ['ID', "Nom de l'événement", 'Date', 'Heure', 'Lieu'], ';');
+
+
+            // Récupère les events par paquets
+            Event::query()
+                ->select('id', 'name_event', 'date', 'hour', 'location')
+                ->orderBy('id')
+                ->chunkById(1000, function ($events) use ($handle) {
+                    foreach ($events as $event) {
+                        // Normalise date
+                        $dateStr = $event->date instanceof Carbon
+                            ? $event->date->format('Y-m-d')
+                            : (string)$event->date;
+
+                        // Normalise heure → "HH:mm"
+                        $hourRaw = (string)($event->hour ?? '');
+                        if ($hourRaw === '') {
+                            $hourStr = '';
+                        } elseif (strlen($hourRaw) === 5) { // "HH:mm"
+                            $hourStr = $hourRaw;
+                        } else {
+                            // "HH:mm:ss" ou autre → on reformate
+                            try {
+                                $hourStr = Carbon::parse($hourRaw)->format('H:i');
+                            } catch (\Exception $e) {
+                                $hourStr = $hourRaw; // fallback brut si parsing impossible
+                            }
+                        }
+
+                        // Écrit la ligne
+                        fputcsv($handle, [
+                            $event->id,
+                            $event->name_event,
+                            $dateStr,
+                            $hourStr,
+                            $event->location,
+                        ], ';');
+                    }
+                });
+
+            fclose($handle);
+        }, $filename, [
+            // 4) Headers HTTP
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    /**
+     * ==========================================================================
+     * Notifie par e-mail les participants (et éventuellement le créateur)
+     * qu’un événement a changé d’état : 'updated' | 'cancelled' | 'deactivated'.
+     * envoi inline via Mail::raw()
+     * - On n’envoie PAS d’email à l’utilisateur qui vient d’effectuer l’action
+     * ========================================================================
+     */
+    private function notifyParticipantsInline(Event $event, string $action, array $changes = []): void
+    {
+        try {
+            // Charge les participants (Collection de User)
+            $event->loadMissing('participants:id,email,pseudo');
+
+            // Récupère bien les IDs des USERS, pas ceux de la pivot
+            $recipientIds = $event->participants->pluck('id')->all();
+
+            // Ajouter le créateur si ce n'est pas l'acteur courant
+            if ($event->created_by !== auth()->id()) {
+                $recipientIds[] = $event->created_by;
+            }
+
+            // Uniques, et on enlève l’acteur
+            $recipientIds = array_values(array_unique(array_diff($recipientIds, [auth()->id()])));
+
+            // En local, s'il n'y a personne d'autre, on s'envoie à soi pour tester
+            if (empty($recipientIds) && app()->isLocal()) {
+                $recipientIds = [auth()->id()];
+            }
+
+            // Si toujours vide, on log et on sort proprement
+            if (empty($recipientIds)) {
+                Log::info('Notify: aucun destinataire', ['event_id' => $event->id, 'action' => $action]);
+                return;
+            }
+
+            // Récupère les emails
+            $recipients = User::whereIn('id', $recipientIds)
+                ->whereNotNull('email')
+                ->get(['email', 'pseudo']);
+
+            $subject = match ($action) {
+                'cancelled'   => "Événement annulé : {$event->name_event}",
+                'deactivated' => "Événement désactivé : {$event->name_event}",
+                default       => "Événement mis à jour : {$event->name_event}",
+            };
+
+            $lines = [];
+            $lines[] = $subject;
+            $lines[] = "Lieu : {$event->location}";
+            $lines[] = "Date : {$event->date} à {$event->hour}";
+            if ($action === 'updated' && !empty($changes)) {
+                $lines[] = "";
+                $lines[] = "Changements :";
+                foreach ($changes as $field => $diff) {
+                    $old = (string)($diff['old'] ?? '');
+                    $new = (string)($diff['new'] ?? '');
+                    $lines[] = "- {$field} : {$old} → {$new}";
+                }
+            }
+            $lines[] = "";
+            $lines[] = "Voir l’événement : " . route('events.show', $event->id);
+            $body = implode("\n", $lines);
+
+            foreach ($recipients as $user) {
+                Mail::raw($body, function ($message) use ($user, $subject) {
+                    $message->to($user->email)
+                        ->from(config('mail.from.address'), config('mail.from.name'))
+                        ->subject($subject);
+                });
+            }
+
+            Log::info('Notify: mails envoyés', [
+                'event_id' => $event->id,
+                'action'   => $action,
+                'count'    => $recipients->count(),
+                'ids'      => $recipientIds,
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('notifyParticipantsInline failed', [
+                'event_id' => $event->id,
+                'action'   => $action,
+                'error'    => $e->getMessage(),
+            ]);
+        }
+    }
+
+
+
+
+
+
+
+
+
 }
 

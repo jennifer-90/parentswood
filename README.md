@@ -142,6 +142,39 @@ DB_PASSWORD=''
 
 ---
 
+
+## 11. ✉️ Configurer l’envoi d’e-mails (Gmail SMTP)
+
+> En dev, vous pouvez garder `MAIL_MAILER=log` pour éviter d’envoyer de vrais emails.
+> Si vous voulez envoyer via Gmail, suivez ces étapes :
+
+### A) Activer la 2FA et créer un mot de passe d’application Gmail
+1) Ouvrez votre compte Google → **Security** (Sécurité).
+2) Activez **2-Step Verification** (Validation en 2 étapes).
+3) Dans **App passwords** (Mots de passe d’application) :
+    - *Select app* : **Mail**
+    - *Select device* : **Other (Custom)** → mettez par ex. “ParentsWood Local”
+    - Google génère un mot de passe de **16 caractères** → copiez-le.
+
+### B) Mettre à jour votre `.env`
+Dans votre `.env` (ne **jamais** le committer), renseignez :
+
+
+```
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_ENCRYPTION=tls
+
+# !! VOS DONNéE A VOUS !!!
+MAIL_USERNAME= VOTRE_EMAIL_GMAIL@exemple.com
+MAIL_PASSWORD= le mot de passe généré par votre compte google
+MAIL_FROM_ADDRESS= VOTRE_EMAIL_GMAIL@exemple.com
+MAIL_FROM_NAME="Parentswood"
+```
+
+
+
 ## 🔵 Accéder à l'application
 
 ##### Ouvrez votre navigateur et rendez-vous à : http://localhost:8000

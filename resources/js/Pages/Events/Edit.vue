@@ -100,6 +100,14 @@ const scrollToFirstError = () => {
     }
 }
 
+
+const onlyDate = (d) => {
+    if (!d) return ''
+    const s = String(d)
+    return s.includes('T') ? s.split('T')[0] : s.split(' ')[0] // "YYYY-MM-DD"
+}
+const onlyHm = (h) => (h ? String(h).slice(0, 5) : '')       // "HH:mm"
+
 //------------------------------------------------------------------------------------------
 // *****************************************************************************************
 // ******** FORMULAIRE (useForm) (Inertia)
@@ -107,8 +115,8 @@ const scrollToFirstError = () => {
 const form = useForm({
     name_event: props.event.name_event || '',
     description: props.event.description || '',
-    date: props.event.date || '',
-    hour: props.event.hour ? props.event.hour.substring(0, 5) : '',
+    date: onlyDate(props.event?.date),            // ✅
+    hour: onlyHm(props.event?.hour),              // ✅
     location: props.event.location || '',
     min_person: props.event.min_person || 1,
     max_person: props.event.max_person || '',
@@ -123,6 +131,8 @@ watch(
     () => props.event,
     (ev) => {
         console.log('event reçu ->', JSON.parse(JSON.stringify(ev)))
+        form.date = onlyDate(ev?.date)              // ✅
+        form.hour = onlyHm(ev?.hour)                // ✅
         form.centres_interet = getSelectedIdsFromEvent(ev)
         console.log('ids sélectionnés ->', form.centres_interet)
     },
@@ -421,6 +431,10 @@ const deactivateEvent = async () => {
         isLoading.value = false
     }
 }
+
+
+
+
 </script>
 
 

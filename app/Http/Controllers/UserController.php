@@ -304,6 +304,8 @@ class UserController extends Controller
             return back()->with('flash', ['error' => "Action non autorisée."]); /* Ne s'affiche pas */
         }
 
+
+
         // Interdire de se (dé)activer soi-même
         if ($user->id === $currentUser->id) {
             return back()->with('flash', ['error' => "Vous ne pouvez pas modifier votre propre statut."]);

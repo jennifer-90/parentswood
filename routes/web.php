@@ -14,6 +14,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Event;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Mail;
 
 // ========================================================================
 // ZONE PUBLIQUE (accessible à tous)
@@ -213,3 +214,15 @@ Route::middleware(['auth', 'active', 'superadmin'])->group(function () {
 Route::post('/support/contact', [UserController::class, 'sendAdminMessage'])
     ->middleware(['auth', 'active', 'throttle:5,1']) //
     ->name('users.sendAdminMessage');
+
+
+
+
+/*------------SEND MAIL en cas de modif d'un event--------------*/
+Route::get('/test-mail', function () {
+    Mail::raw('Hello depuis Laravel via Gmail SMTP', function ($m) {
+        $m->to('jennifer.bastin.90@gmail.com')
+            ->subject('Test Gmail SMTP');
+    });
+    return 'OK';
+});
