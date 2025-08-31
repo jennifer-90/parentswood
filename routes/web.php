@@ -218,11 +218,3 @@ Route::post('/support/contact', [UserController::class, 'sendAdminMessage'])
 
 
 
-/*------------SEND MAIL en cas de modif d'un event--------------*/
-Route::get('/test-mail', function () {
-    Mail::raw('Hello depuis Laravel via Gmail SMTP', function ($m) {
-        $m->to('jennifer.bastin.90@gmail.com')
-            ->subject('Test Gmail SMTP');
-    });
-    return 'OK';
-});

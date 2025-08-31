@@ -14,8 +14,6 @@ use Illuminate\Support\Facades\Redirect;
 use Inertia\Response;
 use Illuminate\Support\Facades\Mail;
 
-
-
 class UserController extends Controller
 {
     /**
@@ -521,52 +519,86 @@ class UserController extends Controller
         ]);
     }
 
+
     public function sendAdminMessage(Request $request): RedirectResponse
     {
         $me = $request->user();
 
-        // ⚠️ validation
-        $data = $request->validate([
-            'role'    => ['required', 'in:Admin,Super-admin'],
-            'subject' => ['required', 'string', 'max:255'],
-            'message' => ['required', 'string', 'min:10'],
-        ], [], [
-            'role'    => 'destinataire',
-            'subject' => 'sujet',
-            'message' => 'message',
-        ]);
+        // Accepte 'role' OU 'to_role' depuis le front
+        $rawRole = $request->input('role', $request->input('to_role'));
+        // Normalisation: admin -> Admin | super_admin -> Super-admin
+        $role = match (trim((string) $rawRole)) {
+            'admin', 'Admin'                 => 'Admin',
+            'super_admin', 'Super-admin'     => 'Super-admin',
+            default                          => $rawRole,
+        };
 
-        // ⚠️ récupération des destinataires par rôle (Spatie laravel-permission)
-        $recipients = User::role($data['role'])
+        // Validation
+        $data = $request->validate([
+            // on valide contre les libellés Spatie normalisés
+            'subject' => ['required','string','max:255'],
+            'message' => ['required','string','min:10'],
+        ]);
+        abort_unless(in_array($role, ['Admin','Super-admin'], true), 422, 'Destinataire invalide.');
+
+        // Destinataires par rôle (Spatie)
+        $emails = User::whereHas('roles', fn($q) => $q->where('name', $role))
             ->whereNotNull('email')
             ->pluck('email')
             ->unique()
             ->values()
             ->all();
 
-        abort_if(empty($recipients), 404, "Aucun {$data['role']} n’a d’adresse email configurée.");
+        abort_if(empty($emails), 404, "Aucun {$role} n’a d’adresse e-mail configurée.");
 
-        // ⚠️ contenu HTML inline (pas de Blade / Mailable)
-        $html = sprintf(
-            '<h2 style="margin:0 0 12px">Nouveau message support</h2>
-             <p><strong>De :</strong> %s (%s)</p>
-             <p><strong>Sujet :</strong> %s</p>
-             <hr>
-             <pre style="white-space:pre-wrap;font-family:inherit">%s</pre>',
-            e($me->name ?? $me->pseudo ?? ('User #'.$me->id)),
-            e($me->email),
-            e($data['subject']),
-            e($data['message'])
-        );
+        // Sécurisation du contenu
+        $senderName  = e($me->name ?? $me->pseudo ?? ('User #'.$me->id));
+        $senderEmail = e($me->email);
+        $subjectLine = e($data['subject']);
+        $content     = e($data['message']);
 
-        // ⚠️ envoi
-        Mail::html($html, function ($message) use ($recipients, $me, $data) {
-            $message->to($recipients)
-                ->replyTo($me->email, $me->name ?? $me->pseudo ?? 'Utilisateur')
-                ->subject('[Support] '.$data['subject']);
+        // HTML inline (pas de Blade)
+        $html = <<<HTML
+<!doctype html>
+<html>
+  <body style="margin:0;background:#f6f7f9;font-family:Inter,Arial">
+    <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px 0;background:#f6f7f9">
+      <tr><td align="center">
+        <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">
+          <tr>
+            <td style="background:#59c4b4;color:#fff;padding:16px 20px;font-weight:700;font-size:18px">
+              Nouveau message au support
+            </td>
+          </tr>
+          <tr><td style="height:8px;background:#eaf7f5"></td></tr>
+          <tr>
+            <td style="padding:20px">
+              <p style="margin:0 0 10px;color:#374151"><strong>De :</strong> {$senderName} &lt;{$senderEmail}&gt;</p>
+              <p style="margin:0 0 10px;color:#374151"><strong>Sujet :</strong> {$subjectLine}</p>
+              <div style="margin-top:14px;padding:12px;background:#fafafa;border:1px solid #e5e7eb;border-radius:8px">
+                <pre style="white-space:pre-wrap;margin:0;font-family:inherit;color:#111827;line-height:1.5">{$content}</pre>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:12px 20px;color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb">
+              Cet e-mail a été envoyé automatiquement par ParentsWood.
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>
+HTML;
+
+        Mail::html($html, function ($message) use ($emails, $senderName, $subjectLine, $me) {
+            $message->to($emails)
+                ->replyTo($me->email, $senderName)
+                ->subject('[Support] '.$subjectLine);
         });
 
-        return back()->with('success', 'Votre message a été envoyé à l’équipe.');
+        return back()->with('success', "Votre message a été envoyé à l’équipe.");
     }
 
 

@@ -1,175 +1,143 @@
 <script setup>
-import { ref , computed, watch } from 'vue'
-import { useForm } from '@inertiajs/vue3'
+import {ref, computed, watch} from 'vue'
+import {useForm} from '@inertiajs/vue3'
 import axios from 'axios'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
-import villesData from '@/data/villes_belges.json' // a changer en une api externe
-import { Head } from '@inertiajs/vue3' // Permet de définir le titre de la page
+import villesData from '@/data/villes_belges.json' // remplacer par une API externe si souhaité
+import {Head} from '@inertiajs/vue3' // Titre de page
+
 
 /*=====================================================================================*/
 
-// Petite fonction utilitaire : extraire un id quel que soit le format reçu
+/** Normalise n'importe quelle forme d'objets vers des IDs numériques */
 const normalizeIds = (arr) => {
     if (!Array.isArray(arr)) return []
     return arr
         .map((x) => {
-            // cas 1 : déjà un id (number/string)
             if (typeof x === 'number' || typeof x === 'string') return Number(x)
-            // cas 2 : objets fréquents
             if (x?.id != null) return Number(x.id)
             if (x?.interet_id != null) return Number(x.interet_id)
             if (x?.interest_id != null) return Number(x.interest_id)
             if (x?.centre_interet_id != null) return Number(x.centre_interet_id)
-            // cas 3 : via pivot
             if (x?.pivot?.interet_id != null) return Number(x.pivot.interet_id)
             if (x?.pivot?.centre_interet_id != null) return Number(x.pivot.centre_interet_id)
             return NaN
         })
-        .filter(Number.isFinite) // enlève NaN
+        .filter(Number.isFinite)
 }
 
-// Choisit le premier tableau "non vide" présent dans l'event
+/** Récupère le premier tableau d'intérêts non vide de l'event */
 const getSelectedIdsFromEvent = (ev) => {
     const candidate =
         (Array.isArray(ev?.centres_interet) && ev.centres_interet.length && ev.centres_interet) ||
         (Array.isArray(ev?.centresInteret) && ev.centresInteret.length && ev.centresInteret) ||
         (Array.isArray(ev?.interets) && ev.interets.length && ev.interets) ||
         (Array.isArray(ev?.interests) && ev.interests.length && ev.interests) ||
-        [] // rien trouvé
+        []
     return normalizeIds(candidate)
 }
 
-
-
-
-
-
-// ******** Liste des villes chargée depuis le JSON | Plus tard à faire via une API externe
+// Villes depuis un JSON local (peut devenir une API)
 const villes = ref(villesData.villes)
 
-// ******** PROPS REÇUES depuis le contrôleur Inertia (backend Laravel)
+// Props venant d'Inertia
 const props = defineProps({
-    event: Object, //les données de l'événement à éditer
-    errors: Object, //erreurs serveur
-    interets: { type: Array, default: () => [] },
+    event: Object,
+    errors: Object,
+    interets: {type: Array, default: () => []},
 })
-const initialSelected = (props.event?.centres_interet ?? props.event?.centresInteret ?? [])
-    .map(ci => Number(ci.id ?? ci)) // support {id,name} ou simple id
 
-// ******** GESTION DES DATES pour limiter le choix dans l'input <date>
-const today = new Date().toISOString().split('T')[0]
-const nextYear = new Date()
-nextYear.setFullYear(nextYear.getFullYear() + 1)
-const maxDate = nextYear.toISOString().split('T')[0] // aujourd'hui + 1 an pour max
+// Dates min/max (sans piège UTC)
+const toYmd = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
+const todayDateObj = new Date()
+const nextYearDateObj = new Date()
+nextYearDateObj.setFullYear(nextYearDateObj.getFullYear() + 1)
+const today = toYmd(todayDateObj)
+const maxDate = toYmd(nextYearDateObj)
 
-// ******** État des erreurs de validation et du chargement
+// État UI
 const validationErrors = ref({})
-const isLoading = ref(false) //pour afficher un overlay pendant les requêtes
-const successMessage = ref('') // messages
-const errorMessage = ref('') //messages
+const isLoading = ref(false)
+const successMessage = ref('')
+const errorMessage = ref('')
 
-
-// ******** Afficher un message de succès / d’erreur
+// Toasts
 const showSuccessMessage = (message) => {
     successMessage.value = message
     errorMessage.value = ''
-    setTimeout(() => {
-        successMessage.value = ''
-    }, 5000)
+    setTimeout(() => (successMessage.value = ''), 5000)
 }
-
 const showErrorMessage = (message) => {
     errorMessage.value = message
     successMessage.value = ''
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    setTimeout(() => {
-        errorMessage.value = ''
-    }, 10000)
+    window.scrollTo({top: 0, behavior: 'smooth'})
+    setTimeout(() => (errorMessage.value = ''), 10000)
 }
 
-// ******** Scroll au premier champ en erreur
+// Scroll vers le 1er champ en erreur
 const scrollToFirstError = () => {
-    const firstError = Object.keys(validationErrors.value).find(key => validationErrors.value[key])
+    const firstError = Object.keys(validationErrors.value).find((key) => validationErrors.value[key])
     if (firstError) {
         const element = document.getElementById(firstError)
         if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            element.scrollIntoView({behavior: 'smooth', block: 'center'})
             element.focus()
         }
     }
 }
 
-
 const onlyDate = (d) => {
     if (!d) return ''
     const s = String(d)
-    return s.includes('T') ? s.split('T')[0] : s.split(' ')[0] // "YYYY-MM-DD"
+    return s.includes('T') ? s.split('T')[0] : s.split(' ')[0]
 }
-const onlyHm = (h) => (h ? String(h).slice(0, 5) : '')       // "HH:mm"
+const onlyHm = (h) => (h ? String(h).slice(0, 5) : '')
 
-//------------------------------------------------------------------------------------------
-// *****************************************************************************************
-// ******** FORMULAIRE (useForm) (Inertia)
-//Valeurs initiales pré-remplies avec props.event
+// Formulaire (pré-rempli)
 const form = useForm({
     name_event: props.event.name_event || '',
     description: props.event.description || '',
-    date: onlyDate(props.event?.date),            // ✅
-    hour: onlyHm(props.event?.hour),              // ✅
+    date: onlyDate(props.event?.date),
+    hour: onlyHm(props.event?.hour),
     location: props.event.location || '',
     min_person: props.event.min_person || 1,
     max_person: props.event.max_person || '',
-    picture_event: null, // pas d'initialisation avec image existante
-    _method: 'PUT',
-    // _method: 'PUT' car on va utiliser POST + spoof (alternative: vrai axios.put)
+    picture_event: null, // on ne précharge pas de fichier
+    _method: 'PUT', // on envoie via POST + spoof PUT
     centres_interet: [],
 })
 
-// Dès que props.event est disponible, on remplit form.centres_interet
+// Remplir les centres d'intérêt dès que l'event est dispo
 watch(
     () => props.event,
     (ev) => {
-        console.log('event reçu ->', JSON.parse(JSON.stringify(ev)))
-        form.date = onlyDate(ev?.date)              // ✅
-        form.hour = onlyHm(ev?.hour)                // ✅
+        // console.log('event reçu ->', JSON.parse(JSON.stringify(ev)))
+        form.date = onlyDate(ev?.date)
+        form.hour = onlyHm(ev?.hour)
         form.centres_interet = getSelectedIdsFromEvent(ev)
-        console.log('ids sélectionnés ->', form.centres_interet)
+        // console.log('ids sélectionnés ->', form.centres_interet)
     },
-    { immediate: true }
+    {immediate: true}
 )
-// *****************************************************************************************
-//------------------------------------------------------------------------------------------
 
-
-// ******** Limite centre d'intérêt
+// Limite centres d'intérêt
 const MAX_CI = 5
 const selectedInteretCount = computed(() => form.centres_interet.length)
 const isInterestDisabled = (id) =>
     selectedInteretCount.value >= MAX_CI && !form.centres_interet.includes(Number(id))
-const selectedCount = computed(() => form.centres_interet.length)
-const isSelected = (id) => form.centres_interet.includes(id)
-const toggleInterest = (id) => {
-    if (isSelected(id)) {
-        form.centres_interet = form.centres_interet.filter(x => x !== id)
-    } else if (form.centres_interet.length < MAX_CI) {
-        form.centres_interet = [...form.centres_interet, id]
-    }
-}
 
-
-// ******** Validation côté client
+// Validation client
 const validateForm = () => {
     const errors = {}
     let isValid = true
 
-    // >>> Nom requis
     if (!form.name_event || !form.name_event.trim()) {
         errors.name_event = 'Le nom est requis.'
         isValid = false
     }
 
-    // >>> Date requise et pas passée
     if (!form.date) {
         errors.date = 'La date est requise.'
         isValid = false
@@ -183,19 +151,16 @@ const validateForm = () => {
         }
     }
 
-    // >>> Heure requise
     if (!form.hour) {
         errors.hour = "L'heure est requise."
         isValid = false
     }
 
-    // >>> Lieu requis
     if (!form.location) {
         errors.location = 'Le lieu est requis.'
         isValid = false
     }
 
-    // >>> Min/Max participants (1..100 et max > min)
     const min = Number(form.min_person)
     const max = Number(form.max_person)
 
@@ -218,7 +183,6 @@ const validateForm = () => {
         isValid = false
     }
 
-    // >>> Validation du fichier image (si l'utilisateur a sélectionné un fichier
     if (form.picture_event && form.picture_event instanceof File) {
         const allowedTypes = ['image/jpeg', 'image/png']
         if (!allowedTypes.includes(form.picture_event.type)) {
@@ -231,66 +195,43 @@ const validateForm = () => {
         }
     }
 
-    // On pousse les erreurs dans l'état réactif
     validationErrors.value = errors
-    // Si pas valide → UX: on amène l’utilisateur au bon endroit
     if (!isValid) scrollToFirstError()
-
     return isValid
 }
 
-// ******** RESET ERREUR D'UN CHAMP en live pendant que l'utilisateur tape
-// - Appelé sur @input des champs pour faire disparaître l'erreur
+// Reset erreur champ
 const resetFieldError = (field) => {
-    if (validationErrors.value[field]) {
-        delete validationErrors.value[field]
-    }
+    if (validationErrors.value[field]) delete validationErrors.value[field]
 }
 
-
-// ******** GESTION IMAGE : on suit si l'image a changé + URLs d'aperçu
-// - imageChanged : booléen pour savoir si on remplace l'image actuelle
-// - previewUrl : DataURL (base64) pour prévisualiser la nouvelle image
-// - currentImageUrl : URL public/storage/... de l'image actuelle
+// Gestion image
 const imageChanged = ref(false)
 const previewUrl = ref(props.event.picture_event ? `/storage/${props.event.picture_event}` : null)
 const currentImageUrl = ref(props.event.picture_event ? `/storage/${props.event.picture_event}` : null)
 
-
-// ******** Quand l'utilisateur choisit un fichier
 const handleFileChange = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     const allowedTypes = ['image/jpeg', 'image/png']
     if (!allowedTypes.includes(file.type)) {
         validationErrors.value.picture_event = 'Veuillez télécharger une image valide (JPEG ou PNG).'
         e.target.value = ''
         return
     }
-
     if (file.size > 2 * 1024 * 1024) {
         validationErrors.value.picture_event = "L'image ne doit pas dépasser 2 Mo."
         e.target.value = ''
         return
     }
-
-    // On enlève le message d'erreur si présent
     if (validationErrors.value.picture_event) delete validationErrors.value.picture_event
-
-    // On place le File dans l'objet form (pour l'envoyer dans FormData)
     form.picture_event = file
     imageChanged.value = true
-
-    // Lecture du fichier pour afficher un aperçu immédiat
     const reader = new FileReader()
-    reader.onload = (ev) => {
-        previewUrl.value = ev.target?.result
-    }
+    reader.onload = (ev) => (previewUrl.value = ev.target?.result)
     reader.readAsDataURL(file)
 }
 
-//******** removeCurrentImage : l'utilisateur veut supprimer l'image existante
 const removeCurrentImage = () => {
     if (confirm('Voulez-vous vraiment supprimer cette image ?')) {
         form.picture_event = 'REMOVE_IMAGE'
@@ -299,128 +240,76 @@ const removeCurrentImage = () => {
     }
 }
 
-//******** l'utilisateur annule la suppression d'image
 const restoreImage = () => {
     form.picture_event = null
     previewUrl.value = currentImageUrl.value
     imageChanged.value = false
-
     const fileInput = document.getElementById('picture_event')
     if (fileInput) fileInput.value = ''
 }
 
-//------------------------------------------------------------------------------------------
-// *****************************************************************************************
-// ******** SUBMIT : envoi du formulaire au serveur (update event)
+// Submit
 const submit = async () => {
-    // 1) Validation côté client
-    // Si la validation échoue, on sort tout de suite.
-    // Pas besoin de `return false` avec @submit.prevent : `return;` suffit.
-    if (!validateForm()) {
-        return;
-    }
+    if (!validateForm()) return
 
-    // 2) On affiche l'overlay de chargement et on vide les anciennes erreurs
-    isLoading.value = true;
-    validationErrors.value = {}; // reset propre
+    isLoading.value = true
+    validationErrors.value = {}
 
-    // 3) On prépare les données à envoyer au backend
-    const formData = new FormData();
+    const formData = new FormData()
+    ;['name_event', 'description', 'date', 'hour', 'location', 'min_person', 'max_person'].forEach((field) => {
+        const value = form[field]
+        if (value !== null && value !== undefined && value !== '') {
+            formData.append(field, value)
+        }
+    })
 
-    // a) Champs simples (texte / nombres)
-    // On n'envoie pas les valeurs null/undefined/vides.
-    ['name_event', 'description', 'date', 'hour', 'location', 'min_person', 'max_person']
-        .forEach((field) => {
-            const value = form[field];
-            if (value !== null && value !== undefined && value !== '') {
-                formData.append(field, value);
-            }
-        });
+    ;(form.centres_interet || []).forEach((id) => formData.append('centres_interet[]', Number(id)))
 
-    // b) Centres d'intérêt (array)
-    // Laravel attend un tableau "centres_interet[]"
-    (form.centres_interet || []).forEach((id) => {
-        formData.append('centres_interet[]', Number(id));
-    });
-
-    // c) Image
-    // - Si l'utilisateur a choisi une nouvelle image => on l'envoie
-    // - Si l'utilisateur a cliqué "Supprimer" => on envoie le flag "REMOVE_IMAGE"
-    // - Sinon => on n'envoie rien et le backend garde l'image existante
     if (form.picture_event instanceof File) {
-        formData.append('picture_event', form.picture_event, form.picture_event.name);
+        formData.append('picture_event', form.picture_event, form.picture_event.name)
     } else if (form.picture_event === 'REMOVE_IMAGE') {
-        formData.append('picture_event', 'REMOVE_IMAGE');
+        formData.append('picture_event', 'REMOVE_IMAGE')
     }
 
-    // d) Méthode spoofée pour Laravel (on fait un POST mais on veut un "PUT")
-    formData.append('_method', 'PUT');
+    formData.append('_method', 'PUT')
 
     try {
-        // 4) Envoi au backend (axios gère tout seul le multipart/form-data)
-        await axios.post(
-            route('events.update', { event: props.event.id }),
-            formData
-        );
-
-        // 5) Succès UI
-        successMessage.value = 'Événement mis à jour avec succès !';
-        errorMessage.value = '';
-
-        // Petite redirection (optionnelle) après 1,5s
-        setTimeout(() => {
-            window.location.href = route('events.index');
-        }, 1500);
+        await axios.post(route('events.update', {event: props.event.id}), formData)
+        successMessage.value = 'Événement mis à jour avec succès !'
+        errorMessage.value = ''
+        setTimeout(() => (window.location.href = route('events.index')), 1500)
     } catch (error) {
-        console.error('Erreur lors de la mise à jour:', error);
-
-        // 422 = erreurs de validation renvoyées par Laravel
+        console.error('Erreur lors de la mise à jour:', error)
         if (error.response?.status === 422) {
-            const serverErrors = error.response?.data?.errors || {};
-            // On aplatit { field: [msg1, msg2] } en { field: 'msg1' } pour l'affichage
-            const flat = {};
+            const serverErrors = error.response?.data?.errors || {}
+            const flat = {}
             Object.keys(serverErrors).forEach((key) => {
-                const msgs = serverErrors[key];
-                flat[key] = Array.isArray(msgs) ? msgs[0] : msgs;
-            });
-            validationErrors.value = flat;
-
-            errorMessage.value = 'Veuillez corriger les erreurs dans le formulaire.';
-            // On amène l'utilisateur au premier champ en erreur
-            scrollToFirstError();
+                const msgs = serverErrors[key]
+                flat[key] = Array.isArray(msgs) ? msgs[0] : msgs
+            })
+            validationErrors.value = flat
+            errorMessage.value = 'Veuillez corriger les erreurs dans le formulaire.'
+            scrollToFirstError()
         } else {
-            // Erreur serveur générique
-            errorMessage.value = 'Une erreur est survenue lors de la mise à jour.';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            errorMessage.value = 'Une erreur est survenue lors de la mise à jour.'
+            window.scrollTo({top: 0, behavior: 'smooth'})
         }
     } finally {
-        // 6) On coupe le spinner quoi qu'il arrive
-        isLoading.value = false;
+        isLoading.value = false
     }
-};
+}
 
-// *****************************************************************************************
-//------------------------------------------------------------------------------------------
-
-
-// ******** DESACTIVATION DE L'ÉVÉNEMENT : requête PUT simple
+// Désactivation
 const deactivateEvent = async () => {
     if (!confirm("Êtes-vous sûr de vouloir désactiver cet événement ? Il ne sera plus visible par les autres utilisateurs.")) {
         return
     }
-
     try {
         isLoading.value = true
-
-        const response = await axios.put(
-            route('events.deactivate', props.event.id)
-        )
-
+        const response = await axios.put(route('events.deactivate', props.event.id))
         if (response.data?.success) {
             showSuccessMessage(response.data.message || 'Événement désactivé.')
-            setTimeout(() => {
-                window.location.href = route('events.index')
-            }, 1500)
+            setTimeout(() => (window.location.href = route('events.index')), 1500)
         } else {
             showErrorMessage(response.data?.message || "Une erreur est survenue lors de la désactivation de l'événement.")
         }
@@ -431,24 +320,22 @@ const deactivateEvent = async () => {
         isLoading.value = false
     }
 }
-
-
-
-
 </script>
 
-
 <template>
-    <Head :title="`Modifier ${event.name_event}`" />
+    <Head :title="`Modifier ${props.event?.name_event ?? ''}`"/>
 
     <AuthenticatedLayout>
         <!-- Overlay de chargement -->
         <div v-if="isLoading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white p-6 rounded-lg shadow-xl">
                 <div class="flex items-center">
-                    <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-[#59c4b4]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-[#59c4b4]" xmlns="http://www.w3.org/2000/svg"
+                         fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     <span class="text-lg font-medium text-gray-700">Enregistrement en cours...</span>
                 </div>
@@ -460,7 +347,9 @@ const deactivateEvent = async () => {
             <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
                 <span class="block sm:inline">{{ successMessage }}</span>
                 <span class="absolute top-0 bottom-0 right-0 px-4 py-3" @click="successMessage = ''">
-          <svg class="fill-current h-6 w-6 text-green-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+          <svg class="fill-current h-6 w-6 text-green-500" role="button" xmlns="http://www.w3.org/2000/svg"
+               viewBox="0 0 20 20"><title>Close</title><path
+              d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
         </span>
             </div>
         </div>
@@ -470,7 +359,9 @@ const deactivateEvent = async () => {
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
                 <span class="block sm:inline">{{ errorMessage }}</span>
                 <span class="absolute top-0 bottom-0 right-0 px-4 py-3" @click="errorMessage = ''">
-          <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+          <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg"
+               viewBox="0 0 20 20"><title>Close</title><path
+              d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
         </span>
             </div>
         </div>
@@ -478,9 +369,9 @@ const deactivateEvent = async () => {
         <div class="py-4 bg-[#f9f5f2] min-h-screen">
             <div class="mx-auto w-full px-3 sm:px-5">
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
-
                     <!-- En-tête -->
-                    <div class="bg-transparent border-2 border-[#59c4b4] rounded-lg p-4 mb-8" style="background-color: rgba(89, 196, 180, 0.05);">
+                    <div class="bg-transparent border-2 border-[#59c4b4] rounded-lg p-4 mb-8"
+                         style="background-color: rgba(89, 196, 180, 0.05);">
                         <div class="flex items-center justify-center gap-3">
                             <div class="bg-[#59c4b4] text-white rounded-full p-3">
                                 <i class="fa-solid fa-pen-to-square text-xl"></i>
@@ -491,16 +382,15 @@ const deactivateEvent = async () => {
                     </div>
 
                     <!-- Message de succès dans la carte -->
-                    <div v-if="successMessage" class="mb-6 bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-center font-semibold shadow-sm">
+                    <div v-if="successMessage"
+                         class="mb-6 bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-center font-semibold shadow-sm">
                         {{ successMessage }}
                     </div>
 
                     <!-- FORM -->
                     <form @submit.prevent="submit" class="space-y-6 max-w-3xl mx-auto">
-
                         <!-- Grille 2 colonnes -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-
                             <!-- Colonne gauche -->
                             <div class="space-y-6">
                                 <!-- Nom -->
@@ -521,8 +411,7 @@ const deactivateEvent = async () => {
                                         placeholder="Ex: Soirée jeux de société"
                                     />
                                     <p v-if="validationErrors.name_event" class="mt-1 text-sm text-red-600">
-                                        {{ validationErrors.name_event }}
-                                    </p>
+                                        {{ validationErrors.name_event }}</p>
                                 </div>
 
                                 <!-- Date & Heure -->
@@ -545,8 +434,7 @@ const deactivateEvent = async () => {
                                             :max="maxDate"
                                         />
                                         <p v-if="validationErrors.date" class="mt-1 text-sm text-red-600">
-                                            {{ validationErrors.date }}
-                                        </p>
+                                            {{ validationErrors.date }}</p>
                                     </div>
 
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -565,8 +453,7 @@ const deactivateEvent = async () => {
                                             class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
                                         <p v-if="validationErrors.hour" class="mt-1 text-sm text-red-600">
-                                            {{ validationErrors.hour }}
-                                        </p>
+                                            {{ validationErrors.hour }}</p>
                                     </div>
                                 </div>
 
@@ -589,8 +476,7 @@ const deactivateEvent = async () => {
                                         <option v-for="ville in villes" :key="ville" :value="ville">{{ ville }}</option>
                                     </select>
                                     <p v-if="validationErrors.location" class="mt-1 text-sm text-red-600">
-                                        {{ validationErrors.location }}
-                                    </p>
+                                        {{ validationErrors.location }}</p>
                                 </div>
                             </div>
 
@@ -615,8 +501,7 @@ const deactivateEvent = async () => {
                                             class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
                                         <p v-if="validationErrors.min_person" class="mt-1 text-sm text-red-600">
-                                            {{ validationErrors.min_person }}
-                                        </p>
+                                            {{ validationErrors.min_person }}</p>
                                     </div>
 
                                     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -636,8 +521,7 @@ const deactivateEvent = async () => {
                                             class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200"
                                         />
                                         <p v-if="validationErrors.max_person" class="mt-1 text-sm text-red-600">
-                                            {{ validationErrors.max_person }}
-                                        </p>
+                                            {{ validationErrors.max_person }}</p>
                                     </div>
                                 </div>
 
@@ -653,18 +537,14 @@ const deactivateEvent = async () => {
                                             class="cursor-pointer bg-gray-50 hover:bg-gray-100 text-gray-700 py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#59c4b4]"
                                         >
                                             <i class="fa-solid fa-upload mr-2"></i>
-                                            {{ form.picture_event && form.picture_event.name ? form.picture_event.name : 'Télécharger une image' }}
+                                            {{
+                                                form.picture_event && form.picture_event.name ? form.picture_event.name : 'Télécharger une image'
+                                            }}
                                         </label>
 
-                                        <input
-                                            id="picture_event"
-                                            type="file"
-                                            class="hidden"
-                                            accept="image/jpeg,image/png"
-                                            @change="handleFileChange"
-                                        />
+                                        <input id="picture_event" type="file" class="hidden"
+                                               accept="image/jpeg,image/png" @change="handleFileChange"/>
 
-                                        <!-- Supprimer / Rétablir -->
                                         <button
                                             v-if="(previewUrl || currentImageUrl) && form.picture_event !== 'REMOVE_IMAGE'"
                                             @click="removeCurrentImage"
@@ -688,14 +568,16 @@ const deactivateEvent = async () => {
                                     </p>
 
                                     <!-- Aperçu -->
-                                    <div v-if="previewUrl || (currentImageUrl && form.picture_event !== 'REMOVE_IMAGE')" class="mt-4">
+                                    <div v-if="previewUrl || (currentImageUrl && form.picture_event !== 'REMOVE_IMAGE')"
+                                         class="mt-4">
                                         <p class="text-sm font-medium text-gray-700 mb-2">
                                             {{ previewUrl && imageChanged ? 'Nouvel aperçu :' : 'Image actuelle :' }}
                                         </p>
                                         <div class="relative">
+                                            <!-- ⚠️ FIX 2 : utiliser props.event pour l'alt -->
                                             <img
                                                 :src="previewUrl || currentImageUrl"
-                                                :alt="event.name_event"
+                                                :alt="props.event?.name_event || 'Image de l’événement'"
                                                 class="h-48 w-full object-cover rounded-lg border border-gray-200"
                                             />
                                             <button
@@ -710,17 +592,21 @@ const deactivateEvent = async () => {
                                         </div>
                                     </div>
 
-                                    <div v-else-if="form.picture_event === 'REMOVE_IMAGE'" class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                                    <div v-else-if="form.picture_event === 'REMOVE_IMAGE'"
+                                         class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                                         <p class="text-sm text-yellow-700 flex items-center">
+                                            <!-- ℹ️ FA6 : 'fa-solid fa-triangle-exclamation' -->
                                             <i class="fas fa-exclamation-triangle mr-2"></i>
                                             L'image sera supprimée lors de l'enregistrement des modifications.
-                                            <button @click="restoreImage" type="button" class="ml-2 text-yellow-700 hover:text-yellow-900 font-medium">
+                                            <button @click="restoreImage" type="button"
+                                                    class="ml-2 text-yellow-700 hover:text-yellow-900 font-medium">
                                                 Annuler
                                             </button>
                                         </p>
                                     </div>
 
-                                    <div v-else class="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-600">
+                                    <div v-else
+                                         class="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-600">
                                         Aucune image pour cet événement.
                                     </div>
                                 </div>
@@ -728,26 +614,25 @@ const deactivateEvent = async () => {
                         </div>
                         <!-- /Grille 2 colonnes -->
 
-                        <!-- Centres d’intérêt (PLEINE LARGEUR, comme create.vue) -->
-                        <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                        <div id="centres_interet" class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                             <div class="flex items-center justify-between mb-2">
                                 <label class="block text-sm font-medium text-gray-700">
                                     <i class="fa-solid fa-star mr-2 text-[#59c4b4]"></i>Centres d'intérêt
                                 </label>
-                                <button
-                                    type="button"
-                                    @click="form.centres_interet = []"
-                                    class="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
-                                >
+                                <button type="button" @click="form.centres_interet = []"
+                                        class="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50">
                                     Effacer
                                 </button>
                             </div>
 
                             <p class="mt-2 text-xs text-gray-500">
-                                * Tu peux choisir jusqu’à {{ MAX_CI }} centres d’intérêt ({{ selectedInteretCount }}/{{ MAX_CI }}).
+                                * Tu peux choisir jusqu’à {{ MAX_CI }} centres d’intérêt ({{
+                                    selectedInteretCount
+                                }}/{{ MAX_CI }}).
                             </p>
 
-                            <div :class="['rounded-lg border p-3', validationErrors.centres_interet ? 'border-red-500' : 'border-gray-300']">
+                            <div
+                                :class="['rounded-lg border p-3', validationErrors.centres_interet ? 'border-red-500' : 'border-gray-300']">
                                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                     <label
                                         v-for="ci in (props.interets ?? [])"
@@ -783,7 +668,7 @@ const deactivateEvent = async () => {
                             </div>
                         </div>
 
-                        <!-- Description (PLEINE LARGEUR, comme create.vue) -->
+                        <!-- Description -->
                         <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                             <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
                                 <i class="fa-regular fa-comment-dots mr-2 text-[#59c4b4]"></i>Description
@@ -808,8 +693,9 @@ const deactivateEvent = async () => {
                         <!-- Boutons d'action -->
                         <div class="flex flex-col sm:flex-row justify-between gap-3 pt-4 border-t border-gray-200">
                             <div class="flex flex-col sm:flex-row gap-3">
+                                <!-- ⚠️ FIX 4 : utiliser props.event.id -->
                                 <a
-                                    :href="route('events.show', event.id)"
+                                    :href="route('events.show', props.event.id)"
                                     class="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 flex items-center justify-center"
                                 >
                                     <i class="fa-solid fa-eye mr-2"></i>Voir l'événement
@@ -833,11 +719,12 @@ const deactivateEvent = async () => {
                                 <button
                                     type="submit"
                                     class="px-6 py-2.5 bg-[#59c4b4] text-white font-medium rounded-lg hover:bg-[#4db3a3] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#59c4b4] transition-all duration-200 flex items-center justify-center"
-                                    :disabled="form.processing"
-                                    :class="{ 'opacity-50 cursor-not-allowed': form.processing }"
+                                    :disabled="isLoading"
+                                    :aria-busy="isLoading ? 'true' : 'false'"
+                                    :class="{ 'opacity-50 cursor-not-allowed': isLoading }"
                                 >
                                     <i class="fa-solid fa-save mr-2"></i>
-                                    {{ form.processing ? 'Enregistrement...' : 'Enregistrer les modifications' }}
+                                    {{ isLoading ? 'Enregistrement...' : 'Enregistrer les modifications' }}
                                 </button>
                             </div>
                         </div>
@@ -848,7 +735,6 @@ const deactivateEvent = async () => {
         </div>
     </AuthenticatedLayout>
 </template>
-
 
 <style scoped>
 /* Styles spécifiques pour cette page */

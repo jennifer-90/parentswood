@@ -200,7 +200,7 @@ const remainingActiveSlots = computed(() => {
 
 // ⚠️ NEW: état du formulaire + submit
 const contactForm = ref({
-    role: 'admin',      // 'Admin' | 'Super-admin'
+    role: 'Admin',      // 'Admin' | 'Super-admin'
     subject: '',
     message: '',
 })
@@ -532,6 +532,8 @@ const submitContact = () => {
                     </div>
                 </div>
 
+
+
                 <!-- ====== Colonne droite : Contacter l’équipe ====== -->
                 <div class="bg-white rounded-lg p-4 shadow-sm">
                     <h2 class="font-semibold text-gray-800 mb-3">
@@ -544,15 +546,15 @@ const submitContact = () => {
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <!-- ⚠️ CHANGEMENT : v-model sur to_role + valeurs normalisées -->
                         <div class="sm:col-span-1">
                             <label for="c-role" class="block text-sm font-medium text-gray-700 mb-1">Destinataire</label>
-                            <select id="c-role" v-model="contactForm.to_role"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent">
-                                <option value="admin">Admin</option>              <!-- ⚠️ -->
-                                <option value="super_admin">Super-admin</option>  <!-- ⚠️ -->
+
+                            <select id="c-role" v-model="contactForm.role" class="...">
+                                <option value="Admin">Admin</option>
+                                <option value="Super-admin">Super-admin</option>
                             </select>
-                            <p v-if="errors.to_role" class="mt-1 text-xs text-red-600">⚠️ {{ errors.to_role }}</p>
+                            <p v-if="errors.role" class="mt-1 text-xs text-red-600">⚠️ {{ errors.role }}</p>
+
                         </div>
 
                         <div class="sm:col-span-2">

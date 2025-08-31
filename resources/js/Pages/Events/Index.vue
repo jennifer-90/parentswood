@@ -36,16 +36,16 @@ watch([selectedVille, selectedDate, selectedFilter, selectedInteret], () => {
 const showAllPast = ref(false)
 
 const pastList = computed(() => Array.isArray(props.pastEvents)
-        ? props.pastEvents
-        : (props.pastEvents?.data ?? [])
-        )
+    ? props.pastEvents
+    : (props.pastEvents?.data ?? [])
+)
 const pastCount = computed(() => pastList.value.length)
 const displayedPastEvents = computed(() =>
-        showAllPast.value ? pastList.value : pastList.value.slice(0, 4)
-    )
-    const remainingPastCount = computed(() =>
-      Math.max(pastCount.value - 4, 0)
-    )
+    showAllPast.value ? pastList.value : pastList.value.slice(0, 4)
+)
+const remainingPastCount = computed(() =>
+    Math.max(pastCount.value - 4, 0)
+)
 
 // Image par défaut
 const defaultImage = '/images/default-event.png'
@@ -102,7 +102,7 @@ const resetFilters = () => {
                     <!-- Filtres -->
                     <div class="bg-[#59c4b4]/10 p-6 rounded-lg mb-12">
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-                                <!-- == villes == -->
+                            <!-- == villes == -->
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Ville</label>
                                 <select
@@ -136,8 +136,10 @@ const resetFilters = () => {
 
                             <!-- ==  centre d'intérêt == -->
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1" for="f-interet">Centre d'intérêt</label>
-                                <select id="f-interet" v-model="selectedInteret" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200">
+                                <label class="block text-sm font-medium text-gray-700 mb-1" for="f-interet">Centre
+                                    d'intérêt</label>
+                                <select id="f-interet" v-model="selectedInteret"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200">
                                     <option value="">Tous les centres d'intérêt</option>
                                     <option v-for="ci in interets" :key="ci.id" :value="ci.id">{{ ci.name }}</option>
                                 </select>
@@ -314,15 +316,9 @@ const resetFilters = () => {
                         </div>
                     </div>
 
-
                     <!-- Section Événements passés -->
 
-
-
-
-
                     <!-- Liste & actions des événements passés -->
-                    <!-- ⚠️ NOUVEAU : on enveloppe le grid + les boutons dans UN SEUL v-if -->
                     <div v-if="pastCount">
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             <Link
@@ -337,32 +333,41 @@ const resetFilters = () => {
                                         :alt="'Image de ' + event.name_event"
                                         class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500 group-hover:scale-105"
                                     />
-                                    <div class="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors duration-300"></div>
+                                    <div
+                                        class="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors duration-300"></div>
                                     <div class="absolute bottom-0 left-0 right-0 p-4">
                                         <p class="text-white font-semibold text-lg truncate">{{ event.name_event }}</p>
                                         <p class="text-white/90 text-sm">📍 {{ event.location }}</p>
                                     </div>
-                                    <div class="absolute top-3 right-3 bg-white/90 text-gray-800 text-xs font-medium px-2 py-1 rounded-full">
+                                    <div
+                                        class="absolute top-3 right-3 bg-white/90 text-gray-800 text-xs font-medium px-2 py-1 rounded-full">
                                         {{
-                                            new Date(event.date).toLocaleDateString('fr-BE', { day: 'numeric', month: 'short' })
+                                            new Date(event.date).toLocaleDateString('fr-BE', {
+                                                day: 'numeric',
+                                                month: 'short'
+                                            })
                                         }}
                                     </div>
                                 </div>
 
                                 <div class="p-4">
                                     <div class="flex items-center text-sm text-gray-500 mb-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none"
+                                             viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
                                         {{ (event.hour || '').slice(0, 5) }} <!-- ⚠️ sécurisation si hour est null -->
                                     </div>
                                     <div class="flex justify-between items-center">
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-            {{ event.participants_count }} participants
-          </span>
-                                        <span class="text-sm font-medium text-gray-500 group-hover:text-[#59c4b4] group-hover:underline transition-colors">
-            Voir détails
-          </span>
+                                      <span
+                                          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                        {{ event.participants_count }} participants
+                                      </span>
+                                        <span
+                                            class="text-sm font-medium text-gray-500 group-hover:text-[#59c4b4] group-hover:underline transition-colors">
+                                        Voir détails
+                                      </span>
                                     </div>
                                 </div>
                             </Link>
@@ -392,20 +397,15 @@ const resetFilters = () => {
                         </div>
                     </div>
 
-                    <!-- ⚠️ CHANGEMENT : état vide maintenant en v-else unique (plus de test sur pastEvents.length) -->
                     <div v-else class="text-center py-12 bg-white rounded-xl border-2 border-dashed border-gray-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-300" fill="none"
+                             viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                  d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
                         <h3 class="mt-2 text-lg font-medium text-gray-900">Aucun événement passé</h3>
                         <p class="mt-1 text-sm text-gray-500">Aucun événement n'a encore eu lieu.</p>
                     </div>
-
-
-
-
-
-
 
                 </div>
             </div>
@@ -420,7 +420,7 @@ const resetFilters = () => {
     transition-duration: 150ms;
 }
 
-/* Style personnalisé pour les champs de formulaire */
+/* Style pour les champs de formulaire */
 select:focus, input:focus {
     outline: none;
     box-shadow: 0 0 0 2px rgba(89, 196, 180, 0.2);
@@ -431,7 +431,7 @@ select:focus, input:focus {
     transform: scale(1.05);
 }
 
-/* Style personnalisé pour la pagination active */
+/* Style  pour la pagination active */
 .bg-\[\#59c4b4\] {
     background-color: #59c4b4;
 }

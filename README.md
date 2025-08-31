@@ -149,9 +149,10 @@ DB_PASSWORD=''
 > Si vous voulez envoyer via Gmail, suivez ces étapes :
 
 ### A) Activer la 2FA et créer un mot de passe d’application Gmail
-1) Ouvrez votre compte Google → **Security** (Sécurité).
-2) Activez **2-Step Verification** (Validation en 2 étapes).
-3) Dans **App passwords** (Mots de passe d’application) :
+1) Ouvrez votre compte Google → **Security** (Sécurité). 
+==> 👉 https://myaccount.google.com/
+2) Activez **2-Step Verification** (Validation en 2 étapes). ==> 👉 https://myaccount.google.com/signinoptions/two-step-verification
+3) Dans **App passwords** (Mots de passe d’application) : ==>👉  https://myaccount.google.com/apppasswords
     - *Select app* : **Mail**
     - *Select device* : **Other (Custom)** → mettez par ex. “ParentsWood Local”
     - Google génère un mot de passe de **16 caractères** → copiez-le.
@@ -165,12 +166,14 @@ MAIL_MAILER=smtp
 MAIL_HOST=smtp.gmail.com
 MAIL_PORT=587
 MAIL_ENCRYPTION=tls
-
-# !! VOS DONNéE A VOUS !!!
-MAIL_USERNAME= VOTRE_EMAIL_GMAIL@exemple.com
-MAIL_PASSWORD= le mot de passe généré par votre compte google
-MAIL_FROM_ADDRESS= VOTRE_EMAIL_GMAIL@exemple.com
-MAIL_FROM_NAME="Parentswood"
+```
+Attention de mettre vos données à vous : 
+```
+# !!!! VOS DONNéE A VOUS !!!!
+MAIL_USERNAME= 👉 VOTRE_EMAIL_GMAIL@exemple.com
+MAIL_PASSWORD= 👉 (ETAPE 3)>>> Votre mot de passe de 16 caractères généré par Google SANS les espaces
+MAIL_FROM_ADDRESS= 👉 VOTRE_EMAIL_GMAIL@exemple.com
+MAIL_FROM_NAME= 👉 "Parentswood"
 ```
 
 

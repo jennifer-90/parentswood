@@ -64,6 +64,8 @@ class User extends Authenticatable
         return $this->belongsToMany(Role::class, 'role_user')->withTimestamps();
     }
 
+
+
     /**
      * Vérifie si l'utilisateur possède un rôle spécifique.
      */

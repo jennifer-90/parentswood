@@ -22,32 +22,37 @@ use Illuminate\Support\Facades\Log;
 use App\Models\User;
 
 
-
 class EventController extends Controller
 {
-    /*############################## HELPER ########################################*/
-    /**
-     * ==========================================
-     * Helper : redirige en arrière avec un flash.
-     * petit utilitaire pour éviter de répéter return back()->with('flash', [...]) partout.
-     * =============================================
-     */
+    /************ LES PRIVATES CONST********/
+
+    /**=========================
+     * >> Limite fixée en dur ici
+     * ========================**/
+
+    private const MAX_ACTIVE_EVENTS = 10;
+    /**************************************/
+
+
+    /*############################## HELPER | LES PRIVATES FN ########################################*/
+
+    /**=======================================
+     * >> redirige en arrière avec un flash.
+     * =======================================**/
     private function backWithFlash(string $message, string $level = 'error')
     {
         return back()->with('flash', [$level => $message]);
     }
 
-    /**
-     * ==============================================
-     * logique réutilisable pour savoir si un événement est déjà passé.
-     *===============================================
-     */
+    /**==================================================================
+     * >> logique réutilisable pour savoir si un événement est déjà passé.
+     * =================================================================**/
     private function eventIsPast(Event $event): bool
     {
         return $this->eventDateTime($event)->isPast();
     }
 
-    /***/
+
     private function eventDateTime(Event $event): Carbon
     {
         // $event->date peut être string ou Carbon ; on normalise en Carbon
@@ -59,16 +64,141 @@ class EventController extends Controller
 
         return $base->setTimeFromTimeString($h);
     }
-    /*##############################################################################*/
-    /*##############################################################################*/
-    /*##############################################################################*/
 
-    /**
-     * ======================================================================
-     * Affiche la liste des événements actifs & non inactifs | >> Page events
+
+    /**==============================================================================================
+     * >>  Notifie par e-mail les participants d'un eventuel changement dans l'event (modif|annulation)
+     * ==============================================================================================**/
+    private function notifyParticipantsInline(Event $event, string $action, array $changes = []): void
+    {
+        try {
+            // Charge les participants (Collection de User)
+            $event->loadMissing('participants:id,email,pseudo');
+
+            // Récupère bien les IDs des USERS, pas ceux de la pivot
+            $recipientIds = $event->participants->pluck('id')->all();
+
+            // Ajouter le créateur si ce n'est pas l'acteur courant
+            if ($event->created_by !== auth()->id()) {
+                $recipientIds[] = $event->created_by;
+            }
+
+            // Uniques, et on enlève l’acteur
+            $recipientIds = array_values(array_unique(array_diff($recipientIds, [auth()->id()])));
+
+            // En local, s'il n'y a personne d'autre, on s'envoie à soi pour tester
+            if (empty($recipientIds) && app()->isLocal()) {
+                $recipientIds = [auth()->id()];
+            }
+
+            // Si toujours vide, on log et on sort proprement
+            if (empty($recipientIds)) {
+                Log::info('Notify: aucun destinataire', ['event_id' => $event->id, 'action' => $action]);
+                return;
+            }
+
+            // Récupère les emails
+            $recipients = User::whereIn('id', $recipientIds)
+                ->whereNotNull('email')
+                ->get(['email', 'pseudo']);
+
+            $subject = match ($action) {
+                'cancelled' => "Événement annulé : {$event->name_event}",
+                'deactivated' => "Événement désactivé : {$event->name_event}",
+                default => "Événement mis à jour : {$event->name_event}",
+            };
+
+            $lines = [];
+            $lines[] = $subject;
+            $lines[] = "Lieu : {$event->location}";
+            $lines[] = "Date : {$event->date} à {$event->hour}";
+            if ($action === 'updated' && !empty($changes)) {
+                $lines[] = "";
+                $lines[] = "Changements :";
+                foreach ($changes as $field => $diff) {
+                    $old = (string)($diff['old'] ?? '');
+                    $new = (string)($diff['new'] ?? '');
+                    $lines[] = "- {$field} : {$old} → {$new}";
+                }
+            }
+            $lines[] = "";
+            $lines[] = "Voir l’événement : " . route('events.show', $event->id);
+            $body = implode("\n", $lines);
+
+            foreach ($recipients as $user) {
+                Mail::raw($body, function ($message) use ($user, $subject) {
+                    $message->to($user->email)
+                        ->from(config('mail.from.address'), config('mail.from.name'))
+                        ->subject($subject);
+                });
+            }
+
+            Log::info('Notify: mails envoyés', [
+                'event_id' => $event->id,
+                'action' => $action,
+                'count' => $recipients->count(),
+                'ids' => $recipientIds,
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('notifyParticipantsInline failed', [
+                'event_id' => $event->id,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** ===========================================
+     * >> Nombre d'événements ACTIFS| EN ATTENTE pour un user.
+     * =============================================*/
+    private function activeEventsCountFor(User $user): int
+    {
+        $today = now()->toDateString();
+        $now = now()->format('H:i:s');
+
+        return Event::where('created_by', $user->id)
+            ->whereNull('cancelled_at')
+            ->where(function ($q) {
+                // ACTIFS
+                $q->where('inactif', false)
+                    // EN ATTENTE (pas encore revu par un admin)
+                    ->orWhere(function ($q2) {
+                        $q2->whereNull('validated_by_id')
+                            ->where(function ($q3) {
+                                $q3->whereNull('confirmed')->orWhere('confirmed', false);
+                            });
+                    });
+            })
+            // À VENIR uniquement
+            ->where(function ($q) use ($today, $now) {
+                $q->whereDate('date', '>', $today)
+                    ->orWhere(function ($qq) use ($today, $now) {
+                        $qq->whereDate('date', $today)->where('hour', '>=', $now);
+                    });
+            })
+            ->count();
+    }
+
+
+    private function assertUnderActiveLimit(User $user): void
+    {
+        $count = $this->activeEventsCountFor($user);
+        if ($count >= self::MAX_ACTIVE_EVENTS) {
+            throw ValidationException::withMessages([
+                // Si ta vue n’affiche pas errors.limit, mets "name_event" à la place
+                'limit' => "Tu as atteint la limite de " . self::MAX_ACTIVE_EVENTS . " événements actifs ou en attente de validation. Désactive/annule un événement avant d’en créer un nouveau.",
+            ]);
+        }
+    }
+
+    /*###############################################################################################*/
+
+
+    /**=========================================================================
+     * >> Affiche la liste des événements actifs & non inactifs | >> Page events
      * ##[Vue : Events/Index]##
-     * ======================================================================
-     */
+     * =========================================================================*/
     public function index(Request $request)
     {
         $selectedCity = $request->input('ville');
@@ -153,13 +283,10 @@ class EventController extends Controller
         ]);
     }
 
-
-    /**
-     * =======================================================
-     * Affiche le formulaire de création d'un nouvel événement.
+    /**=========================================================
+     * >> Affiche le formulaire de création d'un nouvel événement.
      * ##[Vue : Events/Create]##
-     * =======================================================
-     */
+     * =========================================================*/
     public function create()
     {
         $interets = CentreInteret::orderBy('name')->get(['id', 'name']);
@@ -168,19 +295,15 @@ class EventController extends Controller
         ]);
     }
 
-
-    /**
-     * =================================================
-     * Enregistre un nouvel événement après validation:
-     * - Valide les champs
-     * - Gère l’upload de l’image
-     * - Normalise l’heure
-     * - Crée l’événement et lie les centres d’intérêt
-     * - Redirige avec un message flash
-     * ===============================================
-     */
+    /**=================================================
+     * >> Enregistre un nouvel événement après validation
+     * ==================================================*/
     public function store(Request $request)
     {
+
+
+        $this->assertUnderActiveLimit($request->user());
+
         // 1) Valider la requête (messages personnalisés à la fin)
         $validatedData = $request->validate([
             //Requests
@@ -234,7 +357,7 @@ class EventController extends Controller
             $validatedData['picture_event'] = null;
         }
 
-        // 4) Associer le créateur (utilisateur connecté)
+        // 4)  Créateur
         $validatedData['created_by'] = auth()->id();
 
         // 5) Créer l’événement
@@ -249,13 +372,10 @@ class EventController extends Controller
             ->with('flash', ['success' => 'Événement créé !']);
     }
 
-
-    /**
-     * ======================================================
-     * Affiche le formulaire de modification d'un événement.
+    /**======================================================
+     * >> Affiche le formulaire de modification d'un événement.
      * ##[Vue : Events/Edit]##
-     * =====================================================
-     */
+     * =======================================================*/
     public function edit(Event $event)
     {
         // 1) Interdire la modification si l'événement est déjà passé
@@ -277,14 +397,10 @@ class EventController extends Controller
         ]);
     }
 
-
-    /**
-     * ========================================================================
-     * Reçoit le formulaire, valide, met à jour l'événement,
+    /**========================================================================
+     * >> Reçoit le formulaire, valide, met à jour l'événement,
      * gère l'upload/suppression d'image et la sync des centres d'intérêt.
-     * Répond en JSON (succès/erreur).
-     * =======================================================================
-     */
+     * ========================================================================*/
     public function update(Request $request, Event $event)
     {
         $user = auth()->user();
@@ -302,42 +418,45 @@ class EventController extends Controller
 
         try {
             $rules = [
-                'name_event'         => ['required','string','max:255'],
-                'description'        => ['nullable','string'],
-                'date'               => [
-                    'bail','required','date','after_or_equal:today',
-                    function ($attribute,$value,$fail): void {
+                'name_event' => ['required', 'string', 'max:255'],
+                'description' => ['nullable', 'string'],
+                'date' => [
+                    'bail', 'required', 'date', 'after_or_equal:today',
+                    function ($attribute, $value, $fail): void {
                         $d = \Carbon\Carbon::make($value);
-                        if (!$d) { $fail('La date est invalide.'); return; }
+                        if (!$d) {
+                            $fail('La date est invalide.');
+                            return;
+                        }
                         if ($d->gt(now()->addYear())) $fail('La date ne peut pas être plus d’un an dans le futur.');
                     },
                 ],
-                'hour'               => ['required','date_format:H:i'],
-                'location'           => ['required','string','max:255'],
-                'min_person'         => ['required','integer','min:1'],
-                'max_person'         => ['required','integer','min:1','gt:min_person'],
-                'picture_event'      => ['nullable'],
-                'centres_interet'    => ['nullable','array','max:5'],
-                'centres_interet.*'  => ['integer','exists:centres_interet,id'],
+                'hour' => ['required', 'date_format:H:i'],
+                'location' => ['required', 'string', 'max:255'],
+                'min_person' => ['required', 'integer', 'min:1'],
+                'max_person' => ['required', 'integer', 'min:1', 'gt:min_person'],
+                'picture_event' => ['nullable'],
+                'centres_interet' => ['nullable', 'array', 'max:5'],
+                'centres_interet.*' => ['integer', 'exists:centres_interet,id'],
             ];
             if ($request->hasFile('picture_event')) {
-                $rules['picture_event'] = ['image','mimes:jpeg,png,jpg','max:2048'];
+                $rules['picture_event'] = ['image', 'mimes:jpeg,png,jpg', 'max:2048'];
             }
 
             $validated = $request->validate($rules, [
                 'name_event.required' => "Le nom de l'événement est requis.",
-                'date.required'       => 'La date est requise.',
+                'date.required' => 'La date est requise.',
                 'date.after_or_equal' => "La date doit être aujourd'hui ou ultérieure.",
-                'hour.required'       => "L'heure est requise.",
-                'hour.date_format'    => "L'heure doit être au format HH:mm.",
-                'location.required'   => 'Le lieu est requis.',
+                'hour.required' => "L'heure est requise.",
+                'hour.date_format' => "L'heure doit être au format HH:mm.",
+                'location.required' => 'Le lieu est requis.',
                 'min_person.required' => 'Le minimum de participants est requis.',
-                'min_person.min'      => 'Le minimum doit être au moins 1.',
+                'min_person.min' => 'Le minimum doit être au moins 1.',
                 'max_person.required' => 'Le maximum de participants est requis.',
-                'max_person.gt'       => 'Le maximum doit être supérieur au minimum.',
+                'max_person.gt' => 'Le maximum doit être supérieur au minimum.',
                 'picture_event.image' => 'Le fichier doit être une image.',
                 'picture_event.mimes' => 'Formats autorisés : jpeg, png, jpg.',
-                'picture_event.max'   => "L'image ne doit pas dépasser 2 Mo.",
+                'picture_event.max' => "L'image ne doit pas dépasser 2 Mo.",
             ]);
 
             if (isset($validated['hour'])) {
@@ -349,13 +468,13 @@ class EventController extends Controller
                 $validated['picture_event'] = null;
                 if ($oldImage) \Storage::disk('public')->delete($oldImage);
             } elseif ($request->hasFile('picture_event')) {
-                $validated['picture_event'] = $request->file('picture_event')->store('events','public');
+                $validated['picture_event'] = $request->file('picture_event')->store('events', 'public');
                 if ($oldImage) \Storage::disk('public')->delete($oldImage);
             } else {
                 unset($validated['picture_event']);
             }
 
-            $watched  = ['name_event','date','hour','location','description','min_person','max_person','picture_event'];
+            $watched = ['name_event', 'date', 'hour', 'location', 'description', 'min_person', 'max_person', 'picture_event'];
             $original = $event->only($watched);
             if (isset($original['hour']) && strlen((string)$original['hour']) === 5) $original['hour'] .= ':00';
             if ($original['date'] instanceof \Carbon\Carbon) $original['date'] = $original['date']->format('Y-m-d');
@@ -382,7 +501,7 @@ class EventController extends Controller
                 foreach ($dirty as $field => $newValue) {
                     if (in_array($field, $watched, true)) {
                         if ($field === 'date' && $newValue instanceof \Carbon\Carbon) $newValue = $newValue->format('Y-m-d');
-                        if ($field === 'hour' && strlen((string)$newValue) === 5)   $newValue .= ':00';
+                        if ($field === 'hour' && strlen((string)$newValue) === 5) $newValue .= ':00';
                         $changes[$field] = [
                             'old' => (string)($original[$field] ?? ''),
                             'new' => (string)$newValue,
@@ -398,8 +517,8 @@ class EventController extends Controller
                     ->sort()->values()->all();
 
                 if ($oldTags !== $newTags) {
-                    $oldNames = \App\Models\CentreInteret::whereIn('id', $oldTags)->pluck('name')->sort()->values()->all();
-                    $newNames = \App\Models\CentreInteret::whereIn('id', $newTags)->pluck('name')->sort()->values()->all();
+                    $oldNames = CentreInteret::whereIn('id', $oldTags)->pluck('name')->sort()->values()->all();
+                    $newNames = CentreInteret::whereIn('id', $newTags)->pluck('name')->sort()->values()->all();
                     $changes['centres_interet'] = [
                         'old' => implode(', ', $oldNames),
                         'new' => implode(', ', $newNames),
@@ -421,24 +540,16 @@ class EventController extends Controller
         } catch (\Throwable $e) {
             \Log::error('event.update failed', [
                 'event_id' => $event->id,
-                'user_id'  => auth()->id(),
-                'error'    => $e->getMessage(),
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
             ]);
             return back()->with('flash', ['error' => "Une erreur est survenue lors de la mise à jour."]);
         }
     }
 
-    /**
-     * =========================================================
-     * Faire rejoindre l'événement à l'utilisateur connecté.
-     * Règles :
-     * - l'utilisateur doit être connecté
-     * - l'événement ne doit pas être passé, annulé ou inactif
-     * - l'utilisateur ne doit pas déjà être dans les participants
-     * - la capacité ne doit pas être dépassée
-     * Retour : redirection arrière avec message flash.
-     * =======================================================
-     */
+    /**=========================================================
+     * >> Faire rejoindre l'événement à l'utilisateur connecté.
+     * ==========================================================*/
     public function join(Event $event)
     {
         // 1) L'utilisateur doit être connecté
@@ -477,17 +588,9 @@ class EventController extends Controller
         return back()->with('flash', ['success' => 'Tu as rejoint cet évènement !']);
     }
 
-
-    /**
-     * ====================================================================================
-     * Basculer la participation de l'utilisateur (participer <-> annuler).
-     * Règles :
-     * - l'utilisateur doit être connecté
-     * - si on essaye d'AJOUTER : mêmes gardes que join() (pas passé/inactif/annulé + capacité)
-     * - si on SUPPRIME : (tu as choisi de bloquer aussi quand c'est passé)
-     * Retour : redirection vers la page show + message flash.
-     * ======================================================================================
-     */
+    /**====================================================================================
+     * >> Basculer la participation de l'utilisateur (participer <-> annuler).
+     * ======================================================================================*/
     public function toggleParticipation(Event $event)
     {
         // 1) L'utilisateur doit être connecté
@@ -543,20 +646,9 @@ class EventController extends Controller
             ->with('flash', ['success' => $message]);
     }
 
-
-    /**
-     * ==============================================================================
-     * Affiche la page "détails" d’un événement + la liste des commentaires.
-     *
-     * Règles :
-     * - L’utilisateur doit être connecté (sinon -> login).
-     * - Si l’événement est inactif et que l’utilisateur n’est NI créateur NI admin,
-     *   on le redirige vers la liste des événements avec un message.
-     * - On charge les relations utiles (creator, participants, centres d’intérêt).
-     * - On récupère les messages avec leur auteur.
-     * - On envoie au front des indicateurs : can_edit (seul le créateur), is_past.
-     * ==============================================================================
-     */
+    /**==============================================================================
+     * >> Affiche la page "détails" d’un événement + la liste des commentaires.
+     * ==============================================================================*/
     public function show(Event $event)
     {
         // 0) L’utilisateur doit être connecté
@@ -570,9 +662,8 @@ class EventController extends Controller
         $isAdmin = $user->hasAnyRole(['Admin', 'Super-admin']);
 
         // 2) Si l’événement est inactif et que l’utilisateur n’est pas admin, on ne lui montre pas la page de détails.
-        if ($event->inactif && !$isAdmin) {
-            return redirect()
-                ->route('events.index')
+        if ($event->inactif && !($isAdmin || $isCreator)) {
+            return redirect()->route('events.index')
                 ->with('flash', ['error' => "Cet événement n'est plus disponible."]);
         }
 
@@ -608,15 +699,9 @@ class EventController extends Controller
         ]);
     }
 
-
-    /**
-     * ===========================================================================
-     * Désactive (met "inactif" = true) un événement.
-     *
-     * Règles d'accès :
-     * - Le créateur de l'événement OU un Admin/Super-admin peuvent désactiver.
-     * ==========================================================================
-     */
+    /**====================================================
+     * >> Désactive (met "inactif" = true) un événement.
+     * ====================================================*/
     public function deactivate(Request $request, Event $event): RedirectResponse|JsonResponse
     {
         // 0) Vérifier l'authentification : sinon -> login
@@ -657,31 +742,18 @@ class EventController extends Controller
             ->with('flash', ['success' => "L'événement a été désactivé. Il n'est plus visible des autres utilisateurs."]);
     }
 
-
-    /**
-     * ===================================================================
-     * Supprime "logiquement" un événement (ici, on délègue à deactivate).
-     * ===================================================================
-     */
+    /**===================================================================
+     * >>Supprime "logiquement" un événement (ici, on délègue à deactivate).
+     * =====================================================================*/
     public function destroy(Request $request, Event $event)
     {
         // On réutilise exactement la même logique que deactivate()
         return $this->deactivate($request, $event);
     }
 
-
-    /**
-     * =================================================================
-     * Active / Désactive un événement (toggle du champ 'inactif').
-     *
-     * Règles d'accès :
-     * - Réservé aux Admin/Super-admin.
-     *
-     * Garde-fous métier :
-     * - Événement passé : on bloque le toggle (message explicite).
-     * - Événement annulé par le créateur : on bloque la réactivation.
-     *=================================================================
-     */
+    /**=================================================================
+     * >> Active / Désactive un événement (toggle du champ 'inactif').
+     * ==================================================================*/
     public function toggleActive(Request $request, Event $event)
     {
         // 0) Auth : si pas connecté -> page de login
@@ -728,16 +800,9 @@ class EventController extends Controller
         return back()->with('flash', ['success' => $message]);
     }
 
-
-    /**
-     * ============================================================
-     * Valide (accepte) un événement : le rend confirmé et actif.
-     * Règles :
-     * - Doit être connecté (sinon redirection login)
-     * - Doit être Admin / Super-admin (sinon back() + flash)
-     * - On refuse d’accepter un événement annulé ou déjà passé
-     * =========================================================
-     */
+    /**============================================================
+     * >> Valide (accepte) un événement : le rend confirmé et actif.
+     * ==============================================================*/
     public function accept(Event $event)
     {
         // 0) Auth
@@ -779,15 +844,9 @@ class EventController extends Controller
         return back()->with('flash', ['success' => 'Événement accepté.']);
     }
 
-
-    /**
-     * =========================================================================
-     * Refuse un événement : le rend non confirmé et inactif.
-     * Règles :
-     * - Doit être connecté (sinon redirection login)
-     * - Doit être Admin / Super-admin (sinon back() + flash)
-     * - Inutile de refuser s’il est déjà annulé (il est de toute façon inactif)
-     * ========================================================================
+    /**=========================================================
+     * >> Refuse un événement : le rend non confirmé et inactif.
+     * ============================================================
      */
     public function refuse(Event $event)
     {
@@ -824,11 +883,9 @@ class EventController extends Controller
         return back()->with('flash', ['success' => 'Événement refusé.']);
     }
 
-
-    /**
-     * ========================================
-     * Annule un événement (créateur uniquement)
-     * ========================================
+    /**===========================================
+     * >> Annule un événement (créateur uniquement)
+     * ==============================================
      * */
     public function cancel(Event $event)
     {
@@ -864,20 +921,9 @@ class EventController extends Controller
         return back()->with('flash', ['success' => "L'événement a été annulé (action définitive)."]);
     }
 
-
-    /**
-     * =====================================================================
-     * Signale un événement (bouton "Signaler").
-     *
-     * Règles :
-     * - L’utilisateur doit être connecté (sinon → page de login).
-     * - On n’autorise qu’UN signalement par événement ET par session.
-     *   (Si l’utilisateur a déjà signalé cet événement dans cette session,
-     *    on n’incrémente pas une seconde fois.)
-     * - On incrémente "reports_count" puis on marque la session.
-     * - On revient toujours en arrière avec un message flash.
-     * ====================================================================
-     */
+    /**============================================
+     * >> Signale un événement (bouton "Signaler").
+     * ==============================================*/
     public function report(Event $event)
     {
         // 0) Auth : si l'utilisateur n'est pas connecté → login
@@ -917,15 +963,9 @@ class EventController extends Controller
         }
     }
 
-
-    /**
-     * =============================================================
-     * Remet à zéro le compteur de signalements d’un événement.
-     * - Si non connecté → redirection vers le login
-     * - Si pas Admin/Super-admin → retour arrière + message d'erreur
-     * - Sinon → met reports_count=0 et retourne un message de succès
-     * =============================================================
-     */
+    /**=============================================================
+     * >> Remet à zéro le compteur de signalements d’un événement.
+     * =============================================================*/
     public function clearReports(Event $event)
     {
         // 0) Auth
@@ -954,14 +994,9 @@ class EventController extends Controller
         }
     }
 
-
-    /**
-     * ======================================================
-     * Exporte la liste des événements en CSV (UTF-8 + BOM).
-     * - Si non connecté → redirection login
-     * - Si pas Admin/Super-admin → back() + message flash
-     * =====================================================
-     */
+    /**======================================================
+     * >> Exporte la liste des événements en CSV (UTF-8 + BOM).
+     * =======================================================*/
     public function exportEvents()
     {
         // 0) Auth
@@ -1033,116 +1068,6 @@ class EventController extends Controller
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    /**
-     * ==========================================================================
-     * Notifie par e-mail les participants (et éventuellement le créateur)
-     * qu’un événement a changé d’état : 'updated' | 'cancelled' | 'deactivated'.
-     * envoi inline via Mail::raw()
-     * - On n’envoie PAS d’email à l’utilisateur qui vient d’effectuer l’action
-     * ========================================================================
-     */
-    private function notifyParticipantsInline(Event $event, string $action, array $changes = []): void
-    {
-        try {
-            // Charge les participants (Collection de User)
-            $event->loadMissing('participants:id,email,pseudo');
-
-            // Récupère bien les IDs des USERS, pas ceux de la pivot
-            $recipientIds = $event->participants->pluck('id')->all();
-
-            // Ajouter le créateur si ce n'est pas l'acteur courant
-            if ($event->created_by !== auth()->id()) {
-                $recipientIds[] = $event->created_by;
-            }
-
-            // Uniques, et on enlève l’acteur
-            $recipientIds = array_values(array_unique(array_diff($recipientIds, [auth()->id()])));
-
-            // En local, s'il n'y a personne d'autre, on s'envoie à soi pour tester
-            if (empty($recipientIds) && app()->isLocal()) {
-                $recipientIds = [auth()->id()];
-            }
-
-            // Si toujours vide, on log et on sort proprement
-            if (empty($recipientIds)) {
-                Log::info('Notify: aucun destinataire', ['event_id' => $event->id, 'action' => $action]);
-                return;
-            }
-
-            // Récupère les emails
-            $recipients = User::whereIn('id', $recipientIds)
-                ->whereNotNull('email')
-                ->get(['email', 'pseudo']);
-
-            $subject = match ($action) {
-                'cancelled'   => "Événement annulé : {$event->name_event}",
-                'deactivated' => "Événement désactivé : {$event->name_event}",
-                default       => "Événement mis à jour : {$event->name_event}",
-            };
-
-            $lines = [];
-            $lines[] = $subject;
-            $lines[] = "Lieu : {$event->location}";
-            $lines[] = "Date : {$event->date} à {$event->hour}";
-            if ($action === 'updated' && !empty($changes)) {
-                $lines[] = "";
-                $lines[] = "Changements :";
-                foreach ($changes as $field => $diff) {
-                    $old = (string)($diff['old'] ?? '');
-                    $new = (string)($diff['new'] ?? '');
-                    $lines[] = "- {$field} : {$old} → {$new}";
-                }
-            }
-            $lines[] = "";
-            $lines[] = "Voir l’événement : " . route('events.show', $event->id);
-            $body = implode("\n", $lines);
-
-            foreach ($recipients as $user) {
-                Mail::raw($body, function ($message) use ($user, $subject) {
-                    $message->to($user->email)
-                        ->from(config('mail.from.address'), config('mail.from.name'))
-                        ->subject($subject);
-                });
-            }
-
-            Log::info('Notify: mails envoyés', [
-                'event_id' => $event->id,
-                'action'   => $action,
-                'count'    => $recipients->count(),
-                'ids'      => $recipientIds,
-            ]);
-
-        } catch (\Throwable $e) {
-            Log::error('notifyParticipantsInline failed', [
-                'event_id' => $event->id,
-                'action'   => $action,
-                'error'    => $e->getMessage(),
-            ]);
-        }
-    }
-
-
-
-
-
-
-
 
 
 }

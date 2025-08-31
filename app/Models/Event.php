@@ -73,5 +73,10 @@ class Event extends Model
             ->withTimestamps();
     }
 
+    public function scopeActive($q)
+    {
+        return $q->where('inactif', false)->whereNull('cancelled_at');
+    }
+
 
 }
