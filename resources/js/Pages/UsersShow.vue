@@ -1,4 +1,5 @@
 <template>
+    <Head title="Profil de {{ user.pseudo }}"/>
     <AuthenticatedLayout>
 
         <div class="py-4 bg-[#f9f5f2] min-h-screen">
@@ -114,29 +115,6 @@
                             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 <!-- Colonne de gauche - À propos -->
                                 <div class="lg:col-span-1 space-y-6">
-                                    <!-- À propos -->
-                                    <div class="bg-white rounded-lg shadow-sm p-6">
-                                        <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                                            <i class="fas fa-info-circle text-teal-500 mr-2"></i>
-                                            À propos
-                                        </h3>
-                                        <div class="space-y-3 text-gray-600">
-                                            <div v-if="user.phone" class="flex items-center">
-                                                <i class="fas fa-phone text-teal-500 w-5 mr-3"></i>
-                                                <span>{{ user.phone }}</span>
-                                            </div>
-                                            <div v-if="user.address" class="flex items-start">
-                                                <i class="fas fa-map-marker-alt text-teal-500 w-5 mt-1 mr-3"></i>
-                                                <span>{{ user.address }}</span>
-                                            </div>
-                                            <div v-if="user.bio" class="pt-2 border-t border-gray-100">
-                                                <p class="text-gray-700">{{ user.bio }}</p>
-                                            </div>
-                                            <div v-else class="text-gray-400 italic">
-                                                Aucune biographie renseignée
-                                            </div>
-                                        </div>
-                                    </div>
 
                                     <!-- Statistiques -->
                                     <div class="bg-white rounded-lg shadow-sm p-6">
@@ -305,7 +283,7 @@
 
 <script setup>
 import {ref, computed} from 'vue';
-import {Link} from '@inertiajs/vue3';
+import {Head, Link} from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
 const props = defineProps({

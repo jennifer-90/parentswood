@@ -263,8 +263,8 @@ class EventController extends Controller
             ->orderBy('hour', 'desc');
 
         // Pagination (tout en gardant les filtres dans l’URL)
-        $upcomingEvents = $upcomingEventsQuery->paginate(10)->withQueryString();
-        $pastEvents = $pastEventsQuery->paginate(10)->withQueryString();
+        $upcomingEvents = $upcomingEventsQuery->paginate(8)->withQueryString();
+        $pastEvents = $pastEventsQuery->paginate(8)->withQueryString();
 
         // Liste des centres d’intérêt pour les filtres de la vue
         $interests = CentreInteret::orderBy('name')->get(['id', 'name']);
@@ -656,13 +656,13 @@ class EventController extends Controller
             return redirect()->route('login');
         }
 
-        // 1) Prépare quelques infos sur l’utilisateur courant
-        $user = auth()->user();
-        $isCreator = $user->id === $event->created_by;
-        $isAdmin = $user->hasAnyRole(['Admin', 'Super-admin']);
+        // 1) Infos utilisateur courant
+        $user      = auth()->user();
+        $isCreator = $user->id === $event->created_by; // peut te servir pour d'autres indicateurs (can_edit)
+        $isAdmin   = $user->hasAnyRole(['Admin', 'Super-admin']);
 
-        // 2) Si l’événement est inactif et que l’utilisateur n’est pas admin, on ne lui montre pas la page de détails.
-        if ($event->inactif && !($isAdmin || $isCreator)) {
+            // 2) Si l’événement est inactif => **seul** un admin peut voir la page.
+        if ($event->inactif && !$isAdmin) {
             return redirect()->route('events.index')
                 ->with('flash', ['error' => "Cet événement n'est plus disponible."]);
         }
@@ -680,6 +680,8 @@ class EventController extends Controller
             ->with('user:id,pseudo,picture_profil')
             ->latest()
             ->get();
+
+
 
         // 5) Renvoyer la page Inertia avec toutes les données utiles
         return Inertia::render('Events/Show', [

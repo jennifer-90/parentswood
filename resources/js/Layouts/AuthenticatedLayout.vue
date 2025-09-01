@@ -7,6 +7,8 @@ import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import Footer from '@/Components/Footer.vue'
 import Flash from '@/Components/Flash.vue'
+import UiToaster from '@/Components/UiToaster.vue'
+import ConfirmModal from "@/Components/ConfirmModal.vue";
 
 const page = usePage();
 

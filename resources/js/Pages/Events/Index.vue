@@ -1,5 +1,5 @@
 <script setup>
-import {Link, router} from '@inertiajs/vue3'
+import {Head, Link, router} from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import villes from '@/data/villes_belges.json'
 import {defineProps, ref, watch, computed} from 'vue'
@@ -12,6 +12,8 @@ const props = defineProps({
     filters: Object,
 })
 
+
+
 // Filtres (préremplis avec ceux du back pour conserver l'état)
 const selectedVille = ref(props.filters?.ville ?? '')
 const selectedDate = ref(props.filters?.date ?? '')
@@ -19,18 +21,25 @@ const selectedFilter = ref(props.filters?.filter ?? '')
 const selectedInteret = ref(props.filters?.interet ?? '')
 
 // Watch : recharge les données depuis le serveur avec les bons filtres
+let debounce
 watch([selectedVille, selectedDate, selectedFilter, selectedInteret], () => {
-    const params = {}
-    if (selectedVille.value) params.ville = selectedVille.value
-    if (selectedDate.value) params.date = selectedDate.value
-    if (selectedFilter.value) params.filter = selectedFilter.value
-    if (selectedInteret.value) params.interet = selectedInteret.value
+    clearTimeout(debounce)
+    debounce = setTimeout(() => {
+        const params = {}
+        if (selectedVille.value) params.ville = selectedVille.value
+        if (selectedDate.value) params.date = selectedDate.value
+        if (selectedFilter.value) params.filter = selectedFilter.value
+        if (selectedInteret.value) params.interet = Number(selectedInteret.value)
+
 
     router.get(route('events.index'), params, {
         preserveState: true,
         preserveScroll: true
     })
-})
+})})
+
+
+
 
 // --- Affichage "voir plus" des événements passés ---
 const showAllPast = ref(false)
@@ -57,9 +66,11 @@ const resetFilters = () => {
     selectedFilter.value = ''
     selectedInteret.value = ''
 }
+
 </script>
 
 <template>
+    <Head title="Affichage des évènements"/>
     <AuthenticatedLayout>
         <div class="py-4 bg-[#f9f5f2]">
             <div class="mx-auto w-full px-3 sm:px-5">
@@ -138,7 +149,7 @@ const resetFilters = () => {
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1" for="f-interet">Centre
                                     d'intérêt</label>
-                                <select id="f-interet" v-model="selectedInteret"
+                                <select id="f-interet" v-model.number="selectedInteret"
                                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent transition duration-200">
                                     <option value="">Tous les centres d'intérêt</option>
                                     <option v-for="ci in interets" :key="ci.id" :value="ci.id">{{ ci.name }}</option>
@@ -149,7 +160,7 @@ const resetFilters = () => {
                             <button
                                 @click="resetFilters"
                                 class="h-[42px] flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200">
-                                <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" class="h-5 w-5"
+                                <svg xmlns="http://www.w3.org/2000/svg"  class="h-5 w-5"
                                      viewBox="0 0 20 20" fill="currentColor">
                                     <path fill-rule="evenodd"
                                           d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
@@ -170,7 +181,7 @@ const resetFilters = () => {
 
                             <div class="flex items-center gap-3">
                             <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">
-                              {{ upcomingEvents.total }} événement(s)
+                               {{ upcomingEvents?.total ?? 0 }} événement(s)
                             </span>
 
                                 <!-- bouton Créer un événement -->
@@ -186,7 +197,7 @@ const resetFilters = () => {
                                 </Link>
                             </div>
                         </div>
-                        <div v-if="upcomingEvents.data.length"
+                        <div v-if="(upcomingEvents?.data ?? []).length"
                              class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             <Link
                                 v-for="event in upcomingEvents.data"
@@ -217,7 +228,7 @@ const resetFilters = () => {
                                 </div>
                                 <div class="p-4">
                                     <div class="flex items-center text-sm text-gray-500 mb-2">
-                                        <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
+                                        <svg xmlns="http://www.w3.org/2000/svg"
                                              class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                   d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -240,7 +251,7 @@ const resetFilters = () => {
 
                         <div v-else
                              class="text-center py-12 bg-white rounded-xl border-2 border-dashed border-gray-200">
-                            <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
+                            <svg xmlns="http://www.w3.org/2000/svg"
                                  class="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24"
                                  stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -255,7 +266,7 @@ const resetFilters = () => {
                                     :href="route('events.create')"
                                     class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-gradient-to-r from-[#59c4b4] to-[#4db3a3] hover:from-[#4db3a3] hover:to-[#3da393] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#59c4b4]"
                                 >
-                                    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
+                                    <svg xmlns="http://www.w3.org/2000/svg"
                                          class="-ml-1 mr-2 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                         <path fill-rule="evenodd"
                                               d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
@@ -267,7 +278,7 @@ const resetFilters = () => {
                         </div>
 
                         <!-- Pagination -->
-                        <div v-if="upcomingEvents.last_page > 1"
+                        <div v-if="(upcomingEvents?.last_page ?? 1) > 1"
                              class="mt-10 flex items-center justify-between border-t border-gray-200 px-4 py-3 sm:px-6">
                             <div class="flex flex-1 justify-between sm:hidden">
                                 <Link
@@ -290,7 +301,7 @@ const resetFilters = () => {
                                     <p class="text-sm text-gray-700">
                                         Affichage de <span class="font-medium">{{ upcomingEvents.from || 0 }}</span> à
                                         <span class="font-medium">{{ upcomingEvents.to || 0 }}</span> sur
-                                        <span class="font-medium">{{ upcomingEvents.total }}</span> événements
+                                        <span class="font-medium">{{ upcomingEvents?.total ?? 0 }}</span> événements
                                     </p>
                                 </div>
                                 <div>

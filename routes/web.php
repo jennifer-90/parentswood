@@ -202,7 +202,6 @@ Route::middleware(['auth', 'active', 'admin'])->group(function () {
 
 Route::middleware(['auth', 'active', 'superadmin'])->group(function () {
     Route::post('/users/{user:id}/anonymize', [UserController::class, 'anonymize'])->name('users.anonymize');
-    Route::post('/admin/seed/users',       [UserController::class, 'seedUsers'])->name('admin.seed.users');
     Route::post('/users/{user:id}/update-role',       [UserController::class, 'updateRole'])->name('users.updateRole');
 
 });//### - Fin du middleware : auth + active + superadmin ***

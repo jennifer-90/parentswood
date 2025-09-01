@@ -337,19 +337,6 @@ const refuseEvent = (event) => {
     });
 };
 
-/* ########## CREER DES USERS FICTIFS #####################################################################/
-
-/* ...imports existants... */
-const seedUsers = () => {
-    if (!confirm('Créer 10 utilisateurs de test ?')) return;
-    router.post(route('admin.seed.users'), {count: 10}, {
-        preserveScroll: true,
-        onSuccess: () => router.visit(route('admin.index'), {
-            preserveScroll: true, preserveState: false
-        }),
-    });
-};
-
 /* ########## RESET ALERT #####################################################################*/
 const clearEventReports = (event) => {
     if (!confirm(`Remettre à zéro les signalements pour "${event.name_event}" ?`)) return;
@@ -469,17 +456,7 @@ const clearEventReports = (event) => {
                                 </a>
                             </div>
 
-                            <!--########## BOUTON SEED USERS TEST ##########-->
-                            <button
-                                v-if="isSuperAdmin()"
-                                @click="seedUsers"
-                                class="inline-flex items-center gap-2 bg-gradient-to-r from-[#59c4b4] to-[#3aa796]
-                             hover:from-[#3aa796] hover:to-[#318e80] text-white px-4 py-2 rounded-lg
-                             font-semibold transition-all duration-300 transform hover:scale-105 shadow-md">
-                                <i class="fa-solid fa-user-plus"></i>
-                                Générer 10 utilisateurs tests
-                            </button>
-                            <br><br>
+
 
 
                             <!--########## TABLEAU USERS ##########-->
