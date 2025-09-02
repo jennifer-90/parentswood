@@ -122,7 +122,6 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::prefix('profile')->name('profile.')->group(function () {
         Route::get('/',        [ProfileController::class, 'edit'])->name('edit');
         Route::patch('/',      [ProfileController::class, 'update'])->name('update');
-        Route::patch('/pseudo',[ProfileController::class, 'updatePseudo'])->name('updatePseudo');
         Route::patch('/password', [ProfileController::class, 'updatePassword'])->name('updatePassword');
         Route::delete('/',     [ProfileController::class, 'destroy'])->name('destroy');
         Route::patch('/deactivate', [ProfileController::class, 'deactivateYourself'])->name('deactivate');

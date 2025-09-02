@@ -36,10 +36,11 @@ const avatarUrl = computed(
 
 <template>
     <div>
-        <!-- Flash global -->
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-            <Flash />
+        <!-- Flash global (FIXED dans le viewport) -->
+        <div class="fixed top-4 right-4 z-[2000] pointer-events-none">
+            <Flash class="pointer-events-auto" />
         </div>
+
 
         <div class="min-h-screen bg-gray-50">
             <!-- Navigation -->
@@ -58,7 +59,7 @@ const avatarUrl = computed(
                                     >
                                 </div>
                                 <span class="ml-3 text-2xl font-bold bg-gradient-to-r from-teal-600 to-teal-400 bg-clip-text text-transparent">
-                                    PARENTS.WOOD
+                                    PARENTSWOOD
                                 </span>
                             </div>
 
@@ -239,6 +240,12 @@ const avatarUrl = computed(
             <Footer />
         </div>
     </div>
+
+
+
+
+
+
 </template>
 
 <style scoped>

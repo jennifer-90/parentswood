@@ -29,7 +29,7 @@ class ProfileUpdateRequest extends FormRequest
             // TOUS en "sometimes" pour que l'absence du champ ne déclenche PAS d'erreur
             'first_name'     => ['sometimes','string','max:255'],
             'last_name'      => ['sometimes','string','max:255'],
-            'pseudo'         => ['sometimes','string','max:255','unique:users,pseudo,' . $this->user()->id],
+            'pseudo' => ['prohibited'], // ce champ ne doit pas être envoyé
             'email'          => ['sometimes','email','max:255','unique:users,email,' . $this->user()->id],
             'picture_profil' => ['nullable','image','mimes:jpeg,png,jpg','max:2048'],
         ];

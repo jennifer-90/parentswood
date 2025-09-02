@@ -29,7 +29,7 @@ const showingMobileMenu = ref(false)
                                 >
                             </div>
                             <span class="text-2xl font-bold bg-gradient-to-r from-teal-600 to-teal-400 bg-clip-text text-transparent">
-                                PARENTS.WOOD
+                                PARENTSWOOD
                             </span>
                         </Link>
                     </div>

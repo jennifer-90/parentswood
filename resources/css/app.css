@@ -1,4 +1,14 @@
+/* Corps du site */
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap');
+
+/* Titres (Sour Gummy est variable de 400 à 900) */
+@import url('https://fonts.googleapis.com/css2?family=Sour+Gummy:wght@400..900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+    html { font-family: theme('fontFamily.sans'); }
+    h1, h2, h3, h4, h5, h6 { font-family: theme('fontFamily.heading'); }
+}

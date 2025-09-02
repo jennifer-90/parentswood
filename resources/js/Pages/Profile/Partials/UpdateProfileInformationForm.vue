@@ -21,7 +21,6 @@ const asUrl = (val) => {
 const form = useForm({
     first_name: user?.first_name ?? '',
     last_name:  user?.last_name ?? '',
-    pseudo:     user?.pseudo ?? '',
     email:      user?.email ?? '',
     picture_profil: null,
 })
@@ -52,6 +51,7 @@ onBeforeUnmount(() => {
 
 
 function submit() {
+    if ('pseudo' in form) delete form.pseudo
     form
         .transform((data) => ({
             ...data,
@@ -116,23 +116,14 @@ function submit() {
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Pseudo -->
+            <!-- Pseudo (lecture seule) -->
             <div class="space-y-2">
-                <InputLabel for="pseudo" value="Pseudo"/>
-                <div class="relative">
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span class="text-gray-500">@</span>
-                    </div>
-                    <TextInput
-                        id="pseudo"
-                        v-model="form.pseudo"
-                        type="text"
-                        class="w-full pl-6"
-                        :class="{ 'border-red-300': form.errors.pseudo }"
-                    />
-                </div>
-                <InputError :message="form.errors.pseudo" class="mt-1"/>
+                <InputLabel for="pseudo" value="Pseudo" />
+                <p id="pseudo" class="font-semibold text-gray-900">
+                    @ {{ user.pseudo }}
+                </p>
             </div>
+
 
             <!-- Email -->
             <div class="space-y-2">

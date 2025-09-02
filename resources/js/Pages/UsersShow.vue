@@ -1,5 +1,6 @@
 <template>
-    <Head title="Profil de {{ user.pseudo }}"/>
+    <Head :title="`Profil de ${user.pseudo || user.name}`" />
+
     <AuthenticatedLayout>
 
         <div class="py-4 bg-[#f9f5f2] min-h-screen">

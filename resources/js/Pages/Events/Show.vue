@@ -1,47 +1,36 @@
+<!-- resources/js/Pages/Events/Show.vue -->
 <script setup>
 import { ref, computed, toRefs } from 'vue'
-import { usePage, router, Link } from '@inertiajs/vue3'
+import { usePage, router, Link, Head } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
-import { Head } from '@inertiajs/vue3'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 
+/* ======================
+   Props & refs dérivés
+   ====================== */
 const props = defineProps({
     event: Object,
     messages: Array,
     already_reported: Boolean,
 })
-
 const { event, messages, already_reported } = toRefs(props)
 const alreadyReported = ref(!!already_reported.value)
-
-// Affichages
-const centres = computed(() => event.value?.centres_interet ?? event.value?.centresInteret ?? [])
 
 const page = usePage()
 const currentUser = page.props.auth?.user
 const newMessage = ref('')
 
-// Permissions
-const userIsAdmin = computed(() =>
-    currentUser?.roles?.some(r => ['Admin', 'Super-admin'].includes(r.name)) ?? false
-)
-const isParticipating = computed(() =>
-    event.value?.participants?.some(p => p.id === currentUser?.id) ?? false
-)
-const canEditEvent = computed(() => event.value?.created_by === currentUser?.id)
+/* ======================
+   Helpers d’affichage
+   ====================== */
+const centres = computed(() => event.value?.centres_interet ?? event.value?.centresInteret ?? [])
 
-/* =========================================================================
-   DATETIME SANS DÉCALAGE (parse manuel → Date locale)
-   ========================================================================= */
 function parseLocalDateTime(dRaw, hRaw) {
     if (!dRaw) return null
-
-    // Date JS native ?
     if (dRaw instanceof Date && !Number.isNaN(dRaw.getTime())) return dRaw
 
-    // Extraire Y-M-D
     let y, m, d
     if (typeof dRaw === 'string') {
-        // gère "YYYY-MM-DD" ou "YYYY-MM-DDTHH:mm(:ss)"
         const m1 = dRaw.match(/^(\d{4})-(\d{2})-(\d{2})/)
         if (!m1) return null
         y = +m1[1]; m = +m1[2]; d = +m1[3]
@@ -49,7 +38,6 @@ function parseLocalDateTime(dRaw, hRaw) {
         return null
     }
 
-    // Extraire H:M:S
     let hh = 0, mm = 0, ss = 0
     if (typeof hRaw === 'string' && hRaw.length >= 5) {
         const parts = hRaw.split(':')
@@ -58,8 +46,7 @@ function parseLocalDateTime(dRaw, hRaw) {
         ss = +(parts[2] ?? 0)
     }
 
-    // IMPORTANT: constructeur Date(y, m-1, d, h, m, s) → pas de décalage TZ
-    const dt = new Date(y, m - 1, d, hh, mm, ss)
+    const dt = new Date(y, m - 1, d, hh, mm, ss) // pas de décalage TZ
     return Number.isNaN(dt.getTime()) ? null : dt
 }
 
@@ -69,15 +56,8 @@ const eventDateTime = computed(() => {
     return parseLocalDateTime(dRaw, hRaw)
 })
 
-// Source de vérité: back->event.is_past ; fallback calcul local
-const isPastEvent = computed(() =>
-    Boolean(event.value?.is_past ?? (eventDateTime.value ? eventDateTime.value.getTime() < Date.now() : false))
-)
-
-// Affichages
 const displayDateOnly = computed(() => {
     if (!eventDateTime.value) return ''
-    // ex: "dim. 14 septembre 2025"
     return new Intl.DateTimeFormat('fr-BE', {
         weekday: 'short',
         day: '2-digit',
@@ -87,13 +67,31 @@ const displayDateOnly = computed(() => {
 })
 
 const displayHour = computed(() => {
-    // priorité à la Date calculée pour éviter les formats exotiques
     if (eventDateTime.value) {
         return new Intl.DateTimeFormat('fr-BE', { hour: '2-digit', minute: '2-digit' }).format(eventDateTime.value)
     }
-    // fallback sur la string d’origine
     const raw = String(event.value?.hour ?? '')
     return raw.length >= 5 ? raw.slice(0, 5) : ''
+})
+
+/* ======================
+   Permissions & états
+   ====================== */
+const userIsAdmin = computed(() =>
+    currentUser?.roles?.some(r => ['Admin', 'Super-admin'].includes(r.name)) ?? false
+)
+
+const isParticipating = computed(() =>
+    event.value?.participants?.some(p => p.id === currentUser?.id) ?? false
+)
+
+const canEditEvent = computed(() => event.value?.created_by === currentUser?.id)
+
+const isPastEvent = computed(() => {
+    // si le back expose event.is_past, préfère-le → sinon fallback local :
+    if (typeof event.value?.is_past === 'boolean') return event.value.is_past
+    if (!eventDateTime.value) return false
+    return eventDateTime.value.getTime() < Date.now()
 })
 
 /* ============================================================
@@ -102,12 +100,10 @@ const displayHour = computed(() => {
 const participantsCount = computed(() => Number(event.value?.participants?.length ?? 0))
 const capacity = computed(() => Number(event.value?.max_person ?? 0))
 
-// COMPLET (bloque uniquement les nouveaux entrants)
 const isFullForNewJoiners = computed(() =>
     !isParticipating.value && capacity.value > 0 && participantsCount.value >= capacity.value
 )
 
-// RAISON DE DÉSACTIVATION (pour title + accessibilité)
 const disabledReason = computed(() => {
     if (isPastEvent.value) return 'Événement passé'
     if (!isParticipating.value) {
@@ -118,7 +114,6 @@ const disabledReason = computed(() => {
     return ''
 })
 
-// LIBELLÉ DU BOUTON
 const participationLabel = computed(() => {
     if (isPastEvent.value) return 'Événement passé'
     if (isParticipating.value) return 'Annuler ma participation'
@@ -128,14 +123,12 @@ const participationLabel = computed(() => {
     return 'Participer'
 })
 
-// Participation (pas d’optimisme, on recharge)
+/* ======================
+   Actions participation
+   ====================== */
 const toggleParticipation = () => {
-    if (!currentUser) {
-        router.visit(route('login'))
-        return
-    }
+    if (!currentUser) return router.visit(route('login'))
 
-    // Si on n’est PAS déjà participant et que c’est désactivé (complet/annulé/inactif/passé) → noop
     if (!isParticipating.value && (isPastEvent.value || disabledReason.value)) return
 
     router.post(
@@ -154,10 +147,7 @@ const toggleParticipation = () => {
    ====================== */
 const postComment = () => {
     if (!newMessage.value.trim()) return
-    if (!currentUser) {
-        router.visit(route('login'))
-        return
-    }
+    if (!currentUser) return router.visit(route('login'))
 
     router.post(
         route('events.messages.store', { event: event.value.id }),
@@ -174,17 +164,7 @@ const postComment = () => {
 }
 
 /* ======================
-   Suppression
-   ====================== */
-const deleteEvent = () => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) return
-    router.delete(route('events.destroy', event.value.id), {
-        onSuccess: () => router.visit(route('events.index')),
-    })
-}
-
-/* ======================
-   Format utilitaire (pour created_at, updated_at, etc.)
+   Divers utils
    ====================== */
 const formatDate = (input) => {
     const d =
@@ -202,51 +182,50 @@ const formatDate = (input) => {
 }
 
 /* ======================
-   Désactivation
-   ====================== */
-const deactivateEvent = () => {
-    if (!confirm("Êtes-vous sûr de vouloir annuler cet événement ?")) return
-    router.put(
-        route('events.deactivate', event.value.id),
-        {},
-        {
-            preserveScroll: true,
-            onSuccess: () => router.visit(route('events.index')),
-            onError: () => alert("❌ Impossible d'annuler l'événement."),
-        }
-    )
-}
-
-/* ======================
-   Annulation créateur (bouton grisé si impossible)
-   ====================== */
-const canCancelEvent = computed(() => currentUser?.id === event.value?.created_by && !event.value?.cancelled_at)
-const cancelDisabled = computed(() => isPastEvent.value || !canCancelEvent.value)
-
-const cancelEvent = () => {
-    if (cancelDisabled.value) return
-    if (!confirm('Annuler cet événement ? Cette action est définitive.')) return
-    router.post(route('events.cancel', event.value.id), {}, { onSuccess: () => router.visit(route('events.index')) })
-}
-
-/* ======================
    Signalement
    ====================== */
 const reportEvent = () => {
-    if (!currentUser) {
-        router.visit(route('login'))
-        return
-    }
+    if (!currentUser) return router.visit(route('login'))
     router.post(route('events.report', event.value.id), {}, {
         preserveScroll: true,
         onSuccess: () => { alreadyReported.value = true },
     })
 }
+
+/* ======================
+   Annulation via modale
+   ====================== */
+const canCancelEvent = computed(() =>
+    currentUser?.id === event.value?.created_by && !event.value?.cancelled_at
+)
+const cancelDisabled = computed(() => isPastEvent.value || !canCancelEvent.value)
+
+const showCancelModal = ref(false)
+const confirmCancelChecked = ref(false)
+const canConfirmCancel = computed(() => confirmCancelChecked.value && !cancelDisabled.value)
+
+const openCancelModal = () => {
+    if (cancelDisabled.value) return
+    confirmCancelChecked.value = false
+    showCancelModal.value = true
+}
+
+const submitCancel = () => {
+    if (!canConfirmCancel.value) return
+    router.post(
+        route('events.cancel', event.value.id),
+        {},
+        {
+            preserveScroll: true,
+            onSuccess: () => { showCancelModal.value = false },
+            // onError: on laisse la modale ouverte (ex: droits insuffisants)
+        }
+    )
+}
 </script>
 
-
 <template>
-    <Head :title="event.name_event"/>
+    <Head :title="event.name_event" />
 
     <AuthenticatedLayout>
         <div class="py-6 bg-[#f9f5f2] min-h-screen">
@@ -309,10 +288,9 @@ const reportEvent = () => {
                                     {{ event.description || "Aucune description fournie." }}
                                 </p>
 
-                                <!-- Infos clés (inclut Date, Heure, Lieu) -->
+                                <!-- Infos clés -->
                                 <div class="mt-6 pt-6 border-t border-gray-100">
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <!-- Participants min/max -->
                                         <div class="flex items-start">
                                             <div class="bg-[#59c4b4]/10 p-2 rounded-lg mr-3">
                                                 <i class="fa-solid fa-user-group text-[#59c4b4]"></i>
@@ -323,7 +301,6 @@ const reportEvent = () => {
                                             </div>
                                         </div>
 
-                                        <!-- Organisateur -->
                                         <div class="flex items-start">
                                             <div class="bg-[#59c4b4]/10 p-2 rounded-lg mr-3">
                                                 <i class="fa-solid fa-user-tie text-[#59c4b4]"></i>
@@ -351,7 +328,6 @@ const reportEvent = () => {
                                             </div>
                                         </div>
 
-                                        <!-- Date -->
                                         <div class="flex items-start">
                                             <div class="bg-[#59c4b4]/10 p-2 rounded-lg mr-3">
                                                 <i class="fa-regular fa-calendar text-[#59c4b4]"></i>
@@ -362,7 +338,6 @@ const reportEvent = () => {
                                             </div>
                                         </div>
 
-                                        <!-- Heure -->
                                         <div class="flex items-start">
                                             <div class="bg-[#59c4b4]/10 p-2 rounded-lg mr-3">
                                                 <i class="fa-regular fa-clock text-[#59c4b4]"></i>
@@ -373,7 +348,6 @@ const reportEvent = () => {
                                             </div>
                                         </div>
 
-                                        <!-- Lieu -->
                                         <div class="flex items-start">
                                             <div class="bg-[#59c4b4]/10 p-2 rounded-lg mr-3">
                                                 <i class="fa-solid fa-location-dot text-[#59c4b4]"></i>
@@ -384,7 +358,6 @@ const reportEvent = () => {
                                             </div>
                                         </div>
 
-                                        <!-- Créé le -->
                                         <div class="flex items-start">
                                             <div class="bg-[#59c4b4]/10 p-2 rounded-lg mr-3">
                                                 <i class="fa-solid fa-calendar-plus text-[#59c4b4]"></i>
@@ -395,7 +368,6 @@ const reportEvent = () => {
                                             </div>
                                         </div>
 
-                                        <!-- Dernière mise à jour -->
                                         <div class="flex items-start">
                                             <div class="bg-[#59c4b4]/10 p-2 rounded-lg mr-3">
                                                 <i class="fa-solid fa-pen-to-square text-[#59c4b4]"></i>
@@ -598,7 +570,7 @@ const reportEvent = () => {
 
                         <!-- Annuler l'événement (grisé si impossible) -->
                         <button
-                            @click="cancelEvent"
+                            @click="openCancelModal"
                             :disabled="cancelDisabled"
                             class="px-4 py-2.5 rounded-lg flex items-center justify-center border transition-colors"
                             :class="cancelDisabled
@@ -621,54 +593,51 @@ const reportEvent = () => {
                 </div>
             </div>
         </div>
+
+        <!-- Modale de confirmation -->
+        <ConfirmModal
+            v-model:open="showCancelModal"
+            title="Confirmer l’annulation"
+            confirmLabel="Confirmer l’annulation"
+            cancelLabel="Fermer"
+            :disabled="!canConfirmCancel"
+            @confirm="submitCancel"
+        >
+            <p class="text-sm text-gray-700 mb-4">
+                Cette action est <strong>définitive</strong>. L’événement sera <strong>mis inactif</strong> et
+                les participants seront notifiés.
+            </p>
+
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input
+                    type="checkbox"
+                    class="mt-1 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-400"
+                    v-model="confirmCancelChecked"
+                />
+                <span class="text-sm text-gray-700">
+          Je confirme l’annulation de « {{ event.name_event }} ».
+        </span>
+            </label>
+        </ConfirmModal>
     </AuthenticatedLayout>
 </template>
 
-
-
-
-
 <style scoped>
 /* Styles spécifiques pour les barres de défilement */
-.comments-container::-webkit-scrollbar {
-    width: 6px;
-}
-
-.comments-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
-}
-
-.comments-container::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 10px;
-}
-
-.comments-container::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
-}
+.comments-container::-webkit-scrollbar { width: 6px; }
+.comments-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+.comments-container::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 10px; }
+.comments-container::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
 
 /* Animation pour les nouveaux messages */
-.message-enter-active,
-.message-leave-active {
-    transition: all 0.3s ease;
-}
+.message-enter-active, .message-leave-active { transition: all 0.3s ease; }
+.message-enter-from, .message-leave-to { opacity: 0; transform: translateY(10px); }
 
-.message-enter-from,
-.message-leave-to {
-    opacity: 0;
-    transform: translateY(10px);
-}
+/* Liens */
+a { @apply text-[#59c4b4] hover:underline; }
 
-/* Style pour les liens dans le contenu */
-a {
-    @apply text-[#59c4b4] hover:underline;
-}
-
-/* Amélioration de la lisibilité sur mobile */
+/* Mobile */
 @media (max-width: 640px) {
-    .comments-container {
-        max-height: 300px !important;
-    }
+    .comments-container { max-height: 300px !important; }
 }
 </style>

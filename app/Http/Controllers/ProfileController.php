@@ -87,6 +87,8 @@ class ProfileController extends Controller
         // 1) Validation
         $data = $request->validated();
 
+        unset($data['pseudo']);
+
         // 2) LOGS de diagnostic (temporaire)
         \Log::info('hasFile?', ['has' => $request->hasFile('picture_profil')]);
         if ($request->hasFile('picture_profil')) {
@@ -122,24 +124,6 @@ class ProfileController extends Controller
 
         return Redirect::route('profile.edit')
             ->with('flash', ['success' => 'Profil mis à jour !']);
-    }
-
-
-    /**
-     * Mettre à jour le pseudo seulement.
-     */
-    public function updatePseudo(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'pseudo' => ['required','string','max:255','unique:users,pseudo,'.$request->user()->id],
-        ]);
-
-        $request->user()->update([
-            'pseudo' => $request->input('pseudo'),
-        ]);
-
-        return Redirect::route('profile.edit')
-            ->with('flash', ['success' => 'Pseudo mis à jour !']);
     }
 
     /**
