@@ -34,8 +34,7 @@ class EventController extends Controller
     /**************************************/
 
 
-    /*############################## HELPER | LES PRIVATES FN ########################################*/
-
+    /*########## HELPER | LES PRIVATES FN ##################*/
     /**=======================================
      * >> redirige en arrière avec un flash.
      * =======================================**/
@@ -252,6 +251,7 @@ class EventController extends Controller
         // Requête événements actifs
         $eventsQuery = Event::query()
             ->where('inactif', false)
+            ->where('confirmed', true)
             ->withCount('participants'); // participants_count pour l’affichage
 
         // >>> Filtre par ville
@@ -415,6 +415,9 @@ class EventController extends Controller
         // 4)  Créateur
         $validatedData['created_by'] = auth()->id();
 
+        $validatedData['confirmed']  = null;  // en attente
+        $validatedData['inactif']    = true; //  caché tant qu’un admin n’accepte pas
+
         // 5) Créer l’événement
         $event = Event::create($validatedData);
 
@@ -552,11 +555,10 @@ class EventController extends Controller
             if (isset($original['hour']) && strlen((string)$original['hour']) === 5) $original['hour'] .= ':00';
             if ($original['date'] instanceof \Carbon\Carbon) $original['date'] = $original['date']->format('Y-m-d');
 
-            //sortir la pivot du validated
+
             $ciIds = $request->input('centres_interet', []);
             unset($validated['centres_interet']);
 
-            // FIX: préciser la table dans les pluck pour éviter l’ambiguïté
             $oldTags = $event->centresInteret()
                 ->pluck('centres_interet.id')
                 ->sort()->values()->all();
@@ -583,7 +585,6 @@ class EventController extends Controller
 
                 $event->centresInteret()->sync($ciIds);
 
-                // FIX: idem ici
                 $newTags = $event->centresInteret()
                     ->pluck('centres_interet.id')
                     ->sort()->values()->all();
@@ -734,9 +735,10 @@ class EventController extends Controller
         $isAdmin   = $user->hasAnyRole(['Admin', 'Super-admin']);
 
             // 2) Si l’événement est inactif => **seul** un admin peut voir la page.
-        if ($event->inactif && !$isAdmin) {
+        // Seuls Admin/Super-admin OU le créateur voient un event non confirmé OU inactif.
+        if (($event->confirmed !== true || $event->inactif) && !$isAdmin ) {
             return redirect()->route('events.index')
-                ->with('flash', ['error' => "Cet événement n'est plus disponible."]);
+                ->with('flash', ['error' => "Cet événement n'est pas disponible."]);
         }
 
         // 3) Charger les relations nécessaires pour l’affichage
@@ -941,10 +943,14 @@ class EventController extends Controller
             return back()->with('flash', ['info' => "L'événement a déjà été annulé par le créateur."]);
         }
 
-        // Déjà refusé/inactif ?
-        if (!$event->confirmed && $event->inactif) {
-            return back()->with('flash', ['info' => "L'événement est déjà refusé (inactif)."]);
+        if ($this->eventIsPast($event)) {
+            return back()->with('flash', ['error' => "Impossible de refuser : l'événement est déjà passé."]);
         }
+
+        if ($event->confirmed === false) {
+            return back()->with('flash', ['info' => "L'événement est déjà refusé."]);
+        }
+
 
         // 3) Mise à jour
         $event->update([

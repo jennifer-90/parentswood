@@ -237,7 +237,7 @@ const avatarUrl = computed(
                 <slot />
             </main>
 
-            <Footer />
+
         </div>
     </div>
 

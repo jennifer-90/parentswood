@@ -47,17 +47,12 @@ const props = defineProps({
 
 const getEventTime = (ev) => {
     const t = ev?.hour || extractTime(ev?.date);
-    return t ? normTime(t) : '23:59:59'; // <-- au lieu de 00:00:00
+    return t ? normTime(t) : '23:59:59';
 };
-
 
 const BRUSSELS_TZ = 'Europe/Brussels';
 
-
-// Simple: un event est actif si "inactif" est faux
 const isActiveEvent = (ev) => !Boolean(ev?.inactif);
-
-// Déjà en place, on le garde :
 
 const isCreatedByMe = (e) => {
     const ids = [e?.created_by, e?.user_id, e?.owner_id, e?.creator_id, e?.creator?.id]
@@ -76,7 +71,6 @@ const myActiveFutureCreatedEvents = computed(() =>
 );
 
 
-// --- ajouts: parse robustes ---
 const extractYMD = (dateLike) => {
     if (!dateLike) return '';
     return String(dateLike).slice(0, 10); // "YYYY-MM-DD"
@@ -121,6 +115,12 @@ const isPast = (ev) => {
 /* =======================
    FullCalendar options
    ======================= */
+const calendarEvents = computed(() =>
+    (props.allEvents || [])
+        .filter(e => !e.inactif)  // cacher inactifs
+        .filter(e => !isPast(e))  // cacher passés
+)
+
 const calendarOptions = computed(() => ({
     plugins: [dayGridPlugin, interactionPlugin],
     initialView: 'dayGridMonth',
@@ -147,7 +147,7 @@ const calendarOptions = computed(() => ({
     dayGridDay: {
         titleFormat: {year: 'numeric', month: 'long', day: 'numeric'}
     },
-    events: props.allEvents || [],
+    events: calendarEvents.value,
     eventClick: function (info) {
         if (info.event.url) {
             window.open(info.event.url, '_blank');

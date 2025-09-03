@@ -131,13 +131,11 @@ class DashboardController extends Controller
             ];
         }
 
-        // -------- Utilisateurs que JE bloque (pour la section du dashboard) --------
+        // -------- Utilisateurs que JE bloque  --------
         $blockedUsers = $user->blocks()
             ->select('users.id', 'users.pseudo', 'users.first_name', 'users.last_name', 'users.picture_profil')
             ->get()
             ->map(function ($u) {
-                // Si tu as un accessor getPictureProfilUrlAttribute(), on l’utilise.
-                // Sinon, on essaie de construire une URL publique depuis 'public' (à adapter selon ton stockage).
                 $url = $u->picture_profil_url
                     ?? ($u->picture_profil ? Storage::disk('public')->url($u->picture_profil) : null);
 
@@ -167,10 +165,9 @@ class DashboardController extends Controller
                 'totalPast'       => $pastEvents->count(),
             ],
 
-            // >>> Ajouts pour ton composant Vue <<<
-            'blockedUsers'          => $blockedUsers,      // <--- nécessaire pour l’affichage
-            'createdActiveCount'    => $createdActiveCount, // pour la jauge “limite actifs futurs”
-            'maxActiveSlots'        => $maxActiveSlots,     // si tu veux l’afficher/contrôler côté front
+            'blockedUsers'          => $blockedUsers,
+            'createdActiveCount'    => $createdActiveCount,
+            'maxActiveSlots'        => $maxActiveSlots,
         ]);
     }
 }
