@@ -6,164 +6,171 @@ use App\Models\Event;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
-use Carbon\Carbon; //Bibiliothèque laravel - Gestion heures & dates ||  extension de l’API PHP pour DateTime
+use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
     public function index()
     {
-        $user = Auth::user();
+        $user    = Auth::user();
+        $isStaff = $user->hasAnyRole(['Admin', 'Super-admin']);
 
-        $isStaff = $user->hasAnyRole(['Admin','Super-admin']);
+        // -------- Timezone cohérente avec le front --------
+        $tz      = 'Europe/Brussels';
+        $now     = Carbon::now($tz);
+        $today   = $now->toDateString();      // YYYY-MM-DD
+        $nowTime = $now->format('H:i:s');     // HH:mm:ss
 
-        // Requete de récupération de tous les événements pour le calendrier
-        $allEvents = Event::select('id', 'name_event', 'date', 'hour', 'location', 'description')
-            ->where('inactif', 0) //condition - que les events actifs || WHERE inactif = 0
-            ->get() // execute la requete
-            ->map(function ($event) { // transforme chaque objet Event en un tableau
-                return [
-                    'id' => $event->id,
-                    'title' => $event->name_event,
-                    'start' => $event->date,
-                    'time' => $event->hour,
-                    'location' => $event->location,
-                    'description' => $event->description,
-                    'url' => route('events.show', ['event' => $event->id]),
-                    ];
-            });
-
-
-
-        // Récupération des événements auxquels l'utilisateur participe
-        $userParticipatedEvents = $user->eventsParticipated()
-            ->select('events.id', 'events.name_event', 'events.date', 'events.hour', 'events.location', 'events.description')
-            ->where('events.inactif', 0)
-            ->orderBy('events.date', 'asc')
-            ->orderBy('events.hour', 'asc')
+        // -------- Calendrier : tous les actifs + MES events (même en attente/inactifs) --------
+        $allEvents = Event::select('id','name_event','date','hour','location','description','created_by','inactif')
+            ->where(function ($q) use ($user) {
+                $q->where('inactif', 0)
+                    ->orWhere('created_by', $user->id);
+            })
+            ->orderBy('date')->orderBy('hour')
             ->get()
-            ->map(function ($event) {
-                $eventDate = Carbon::parse($event->date); //Transformation en objet pour utiliser les fonctions
-                $today = Carbon::today();
+            ->map(function ($e) {
+                $date = $e->date instanceof Carbon ? $e->date->toDateString() : (string) $e->date;
+                $hour = $e->hour ? (strlen($e->hour) === 5 ? $e->hour . ':00' : $e->hour) : null;
 
                 return [
-                    'id' => $event->id,
-                    'name_event' => $event->name_event,
-                    'date' => $event->date,
-                    'hour' => $event->hour,
-                    'location' => $event->location,
-                    'description' => $event->description,
-                    'is_past' => $eventDate->lt($today), //lt() = "less than" = inférieur à
-                    'status' => $eventDate->lt($today) ? 'passé' : 'à_venir',
+                    'id'         => $e->id,
+                    'title'      => $e->name_event,
+                    'start'      => $hour ? ($date . 'T' . $hour) : $date, // FullCalendar
+                    // pour le front :
+                    'name_event' => $e->name_event,
+                    'date'       => $date,
+                    'hour'       => $hour,
+                    'location'   => $e->location,
+                    'description'=> $e->description,
+                    'created_by' => $e->created_by,
+                    'inactif'    => (bool) $e->inactif,
+                    'url'        => route('events.show', $e->id),
                 ];
             });
 
-        // Séparer les événements à venir et passés
-        $upcomingEvents = $userParticipatedEvents->filter(function ($event) {
-            return $event['status'] === 'à_venir';
-        })->sortBy('date')->values();
+        // -------- Participations de l'utilisateur --------
+        $userParticipatedEvents = $user->eventsParticipated()
+            ->select('events.id','events.name_event','events.date','events.hour','events.location','events.description')
+            ->where('events.inactif', 0)
+            ->orderBy('events.date','asc')->orderBy('events.hour','asc')
+            ->get()
+            ->map(function ($e) {
+                $date = $e->date instanceof Carbon ? $e->date->toDateString() : (string) $e->date;
+                $hour = $e->hour ? (strlen($e->hour) === 5 ? $e->hour . ':00' : $e->hour) : '00:00:00';
+                return [
+                    'id'          => $e->id,
+                    'name_event'  => $e->name_event,
+                    'date'        => $date,
+                    'hour'        => $hour,
+                    'location'    => $e->location,
+                    'description' => $e->description,
+                ];
+            });
 
-        $pastEvents = $userParticipatedEvents->filter(function ($event) {
-            return $event['status'] === 'passé';
-        })->sortByDesc('date')->values();
+        // -------- Split à venir / passés (date + heure) --------
+        $upcomingEvents = $userParticipatedEvents->filter(function ($e) use ($today, $nowTime) {
+            return ($e['date'] > $today) || ($e['date'] === $today && $e['hour'] >= $nowTime);
+        })->sortBy([
+            ['date', 'asc'],
+            ['hour', 'asc'],
+        ])->values();
 
-        // Statistiques pour le bandeau récapitulatif
-        $currentMonth = Carbon::now()->month;
-        $currentYear = Carbon::now()->year;
+        $pastEvents = $userParticipatedEvents->filter(function ($e) use ($today, $nowTime) {
+            return ($e['date'] < $today) || ($e['date'] === $today && $e['hour'] < $nowTime);
+        })->sortByDesc(function ($e) {
+            return $e['date'] . ' ' . $e['hour'];
+        })->values();
 
-        $eventsThisMonth = $upcomingEvents->filter(function ($event) use ($currentMonth, $currentYear) {
-            // use => Permet à une fonction anonyme d’accéder à des variables externes
-            $eventDate = Carbon::parse($event['date']);
-            return $eventDate->month === $currentMonth && $eventDate->year === $currentYear;
+        // -------- Compteurs / stats --------
+        $userCreatedEventsCount = Event::where('created_by', $user->id)->count();
+
+        // Nombre d'événements FUTURS & ACTIFS créés par moi (utile pour jauge)
+        $createdActiveCount = Event::where('created_by', $user->id)
+            ->whereNull('cancelled_at')
+            ->where('inactif', false)
+            ->where(function ($q) use ($today, $nowTime) {
+                $q->whereDate('date', '>', $today)
+                    ->orWhere(function ($qq) use ($today, $nowTime) {
+                        $qq->whereDate('date', $today)
+                            ->where('hour', '>=', $nowTime);
+                    });
+            })
+            ->count();
+
+        // Limite d'événements actifs (si tu as un champ en DB, sinon 10)
+        $maxActiveSlots = (int) ($user->max_create_event ?? 10);
+
+        $currentMonth = $now->month;
+        $currentYear  = $now->year;
+
+        $eventsThisMonth = $upcomingEvents->filter(function ($e) use ($currentMonth, $currentYear, $tz) {
+            $d = Carbon::parse($e['date'], $tz);
+            return $d->month === $currentMonth && $d->year === $currentYear;
         })->count();
 
         $nextEvent = $upcomingEvents->first();
 
-        // ⚠️ Compteurs "créés par l'utilisateur"
-        $userCreatedEventsCount = Event::where('created_by', $user->id)
-            ->where('inactif', 0)
-            ->count();
-
-        // ⚠️ NOUVEAU : actifs / inactifs + liste des inactifs pour l'UI
-        $createdActiveCount = Event::where('created_by', $user->id)
-            ->where('inactif', 0)
-            ->count(); // ⚠️
-
-        $createdInactiveCount = Event::where('created_by', $user->id)
-            ->where('inactif', 1)
-            ->count(); // ⚠️
-
-        $inactiveCreatedEvents = Event::select('id', 'name_event') // ⚠️
-        ->where('created_by', $user->id)
-            ->where('inactif', 1)
-            ->latest('updated_at')
-            ->take(10)
-            ->get(); // ⚠️
-
-
-
-
-        // Récupération du nombre d'événements créés par l'utilisateur
-        $userCreatedEventsCount = Event::where('created_by', $user->id)
-            ->where('inactif', 0)
-            ->count();
-
-        // Données pour le graphique des événements par mois (6 prochains mois) || lib plotly
-        $chartData = [];
-        $currentDate = Carbon::now();
+        // -------- Plotly : data des 6 prochains mois (évents auxquels je participe) --------
+        $chartData  = [];
+        $startMonth = $now->copy()->startOfMonth();
 
         for ($i = 0; $i < 6; $i++) {
-            $monthDate = $currentDate->copy()->addMonths($i);
-            $monthName = $monthDate->locale('fr')->format('M Y');
+            $month      = $startMonth->copy()->addMonths($i);
+            $monthStart = $month->copy()->startOfMonth();
+            $monthEnd   = $month->copy()->endOfMonth();
 
-            $eventsCount = $upcomingEvents->filter(function ($event) use ($monthDate) {
-                $eventDate = Carbon::parse($event['date']);
-                return $eventDate->month === $monthDate->month && $eventDate->year === $monthDate->year;
+            $count = $upcomingEvents->filter(function ($e) use ($monthStart, $monthEnd, $tz) {
+                $d = Carbon::parse($e['date'], $tz);
+                return $d->between($monthStart, $monthEnd);
             })->count();
 
             $chartData[] = [
-                'month' => $monthName,
-                'count' => $eventsCount
+                'month' => $month->locale('fr')->translatedFormat('M Y'), // ex: "sept. 2025"
+                'count' => $count,
             ];
         }
 
-
-
+        // -------- Utilisateurs que JE bloque (pour la section du dashboard) --------
         $blockedUsers = $user->blocks()
-            ->select('users.id','users.pseudo','users.first_name','users.last_name','users.picture_profil')
-            ->orderBy('users.pseudo')
+            ->select('users.id', 'users.pseudo', 'users.first_name', 'users.last_name', 'users.picture_profil')
             ->get()
-            ->map(fn($u) => [
-                'id'                 => $u->id,
-                'pseudo'             => $u->pseudo,
-                'first_name'         => $u->first_name,
-                'last_name'          => $u->last_name,
-                'picture_profil_url' => $u->picture_profil
-                    ? Storage::disk('public')->url($u->picture_profil)
-                    : null,
-            ]);
+            ->map(function ($u) {
+                // Si tu as un accessor getPictureProfilUrlAttribute(), on l’utilise.
+                // Sinon, on essaie de construire une URL publique depuis 'public' (à adapter selon ton stockage).
+                $url = $u->picture_profil_url
+                    ?? ($u->picture_profil ? Storage::disk('public')->url($u->picture_profil) : null);
 
+                return [
+                    'id'                  => $u->id,
+                    'pseudo'              => $u->pseudo,
+                    'first_name'          => $u->first_name,
+                    'last_name'           => $u->last_name,
+                    'picture_profil_url'  => $url,
+                ];
+            });
 
         return Inertia::render('Dashboard', [
-            'user' => $user,
-            'allEvents' => $allEvents,
-            'upcomingEvents' => $upcomingEvents,
-            'pastEvents' => $pastEvents,
+            'user'                   => $user,
+            'allEvents'              => $allEvents,
+            'upcomingEvents'         => $upcomingEvents,
+            'pastEvents'             => $pastEvents,
             'userCreatedEventsCount' => $userCreatedEventsCount,
-            'chartData' => $chartData,
-            'blockedUsers' => $blockedUsers,
-            'isStaff' => $isStaff,
+            'isStaff'                => $isStaff,
+            'chartData'              => $chartData,
 
-            'createdActiveCount'   => $createdActiveCount,     // ⚠️
-            'createdInactiveCount' => $createdInactiveCount,   // ⚠️
-            'inactiveCreatedEvents'=> $inactiveCreatedEvents,  // ⚠️
-            'maxActiveSlots'       => 10,                      // ⚠️
-
+            // Stats “header”
             'stats' => [
                 'eventsThisMonth' => $eventsThisMonth,
-                'nextEvent' => $nextEvent,
-                'totalUpcoming' => $upcomingEvents->count(),
-                'totalPast' => $pastEvents->count(),
+                'nextEvent'       => $nextEvent,
+                'totalUpcoming'   => $upcomingEvents->count(),
+                'totalPast'       => $pastEvents->count(),
             ],
+
+            // >>> Ajouts pour ton composant Vue <<<
+            'blockedUsers'          => $blockedUsers,      // <--- nécessaire pour l’affichage
+            'createdActiveCount'    => $createdActiveCount, // pour la jauge “limite actifs futurs”
+            'maxActiveSlots'        => $maxActiveSlots,     // si tu veux l’afficher/contrôler côté front
         ]);
     }
 }

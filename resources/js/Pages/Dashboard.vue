@@ -45,28 +45,77 @@ const props = defineProps({
    Helpers "date/heure"
    ======================= */
 
-// Normalise une date+heure en objet Date (UTC)
-const toJsDate = (d, h) => {
-    if (!d) return null;
-    try {
-        const day = typeof d === 'string' ? d : new Date(d).toISOString().slice(0, 10);
-        let time = (h || '00:00').toString();
-        // autorise HH:mm ou HH:mm:ss
-        if (/^\d{2}:\d{2}$/.test(time)) time = `${time}:00`;
-        // Ajout du Z pour forcer UTC
-        const isoish = `${day}T${time}Z`;
-        const jsd = new Date(isoish);
-        return isNaN(jsd.getTime()) ? null : jsd;
-    } catch (e) {
-        return null;
-    }
+const getEventTime = (ev) => {
+    const t = ev?.hour || extractTime(ev?.date);
+    return t ? normTime(t) : '23:59:59'; // <-- au lieu de 00:00:00
 };
 
-// Dit si un event est déjà passé (comparé "maintenant" – epoch UTC)
+
+const BRUSSELS_TZ = 'Europe/Brussels';
+
+
+// Simple: un event est actif si "inactif" est faux
+const isActiveEvent = (ev) => !Boolean(ev?.inactif);
+
+// Déjà en place, on le garde :
+
+const isCreatedByMe = (e) => {
+    const ids = [e?.created_by, e?.user_id, e?.owner_id, e?.creator_id, e?.creator?.id]
+        .filter(v => v !== undefined && v !== null)
+        .map(Number);
+    return meId.value != null && ids.includes(Number(meId.value));
+};
+
+// Liste: créé par moi + ACTIF + FUTUR
+const myActiveFutureCreatedEvents = computed(() =>
+    (props.allEvents || [])
+        .filter(e => isCreatedByMe(e))
+        .filter(e => isActiveEvent(e))   // actif
+        .filter(e => !isPast(e))         // futur (date+heure)
+        .sort(byDateAsc)
+);
+
+
+// --- ajouts: parse robustes ---
+const extractYMD = (dateLike) => {
+    if (!dateLike) return '';
+    return String(dateLike).slice(0, 10); // "YYYY-MM-DD"
+};
+const extractTime = (dateLike) => {
+    if (!dateLike) return '';
+    const s = String(dateLike);
+    const m = s.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (!m) return '';
+    return `${m[1]}:${m[2]}:${m[3] ?? '00'}`; // HH:mm:ss
+};
+
+// Normalise une heure "HH:mm" -> "HH:mm:ss"
+const normTime = (t) => {
+    if (!t) return '00:00:00';
+    return /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t;
+};
+
+// "Maintenant" vu depuis Europe/Brussels (YYYY-MM-DD + HH:mm:ss)
+const nowBrussels = () => {
+    const d = new Date();
+    const date = new Intl.DateTimeFormat('fr-CA', {
+        timeZone: BRUSSELS_TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(d); // ex: "2025-09-14"
+    const time = new Intl.DateTimeFormat('fr-FR', {
+        timeZone: BRUSSELS_TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).format(d); // ex: "10:42:05"
+    return {date, time};
+};
+
+// Dit si un event est déjà passé (comparaison dans Europe/Brussels)
 const isPast = (ev) => {
-    const jsd = toJsDate(ev?.date, ev?.hour);
-    if (!jsd) return true; // sécurité : si invalide, on considère passé
-    return jsd.getTime() < Date.now();
+    const evDate = extractYMD(ev?.date);
+    if (!evDate) return true;
+    const { date: today, time: now } = nowBrussels();
+    const evTime = getEventTime(ev);
+    if (evDate < today) return true;
+    if (evDate > today) return false;
+    return evTime < now;
 };
 
 /* =======================
@@ -80,7 +129,7 @@ const calendarOptions = computed(() => ({
         center: 'title',
         right: 'dayGridMonth,dayGridWeek,dayGridDay',
     },
-    timeZone: 'UTC', // <-- important pour rester en phase avec le back
+    timeZone: BRUSSELS_TZ, // <-- fuseau affichage
     selectable: true,
     editable: false,
     locale: frLocale,
@@ -115,15 +164,19 @@ const calendarOptions = computed(() => ({
     }
 }));
 
-// Formatage de la date pour l'affichage (UTC)
+// Formatage de la date pour l'affichage (Europe/Brussels)
 const formatDate = (dateString) => {
-    const date = new Date(`${dateString}T00:00:00Z`);
-    return date.toLocaleDateString('fr-FR', {
+    const ds = extractYMD(dateString);
+    if (!ds) return '';
+    const [y, m, d] = ds.split('-').map(n => parseInt(n, 10));
+    // Midi UTC pour éviter tout glissement de jour avec DST, puis affichage en Brussels
+    const js = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    return js.toLocaleDateString('fr-FR', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
         day: 'numeric',
-        timeZone: 'UTC'
+        timeZone: BRUSSELS_TZ,
     });
 };
 
@@ -144,15 +197,17 @@ const formatMonth = (month) => {
     return months[month - 1];
 };
 
-// Fonction pour formater la prochaine date d'événement (UTC)
+// Fonction pour formater la prochaine date d'événement (Europe/Brussels)
 const formatNextEventDate = (event) => {
-    if (!event) return '';
-    const d = new Date(`${event.date}T00:00:00Z`);
-    const day = d.getUTCDate();
-    const month = formatMonth(d.getUTCMonth() + 1);
-    const time = (event.hour || '').toString(); // déjà HH:mm(:ss) en UTC
+    if (!event?.date) return '';
+    const ds = extractYMD(event.date);
+    const [y, m, d] = ds.split('-').map(n => parseInt(n, 10));
+    const js = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    const day = js.toLocaleDateString('fr-FR', {day: 'numeric', timeZone: BRUSSELS_TZ});
+    const month = js.toLocaleDateString('fr-FR', {month: 'long', timeZone: BRUSSELS_TZ});
+    const time = (event.hour || extractTime(event.date) || '').toString();
     const location = event.location || '';
-    return `${day} ${month} ${time ? 'à ' + time : ''} ${location ? 'à ' + location : ''}`;
+    return `${day} ${month} ${time ? 'à ' + time.slice(0, 5) : ''} ${location ? 'à ' + location : ''}`;
 };
 
 // Fonction pour créer le graphique Plotly
@@ -178,7 +233,7 @@ const createChart = () => {
 
     const layout = {
         title: {
-            text: 'Mes événements par mois',
+            text: 'Mes participations par mois',
             font: {size: 16, color: '#374151'}
         },
         xaxis: {
@@ -242,9 +297,9 @@ const atLimit = computed(() => props.createdActiveCount >= props.maxActiveSlots)
    ========================================================== */
 const derivedPastCreatedEvents = computed(() => {
     if (props.pastCreatedEvents?.length) return props.pastCreatedEvents
-    const meId = props.user?.id
-    if (!meId) return []
-    return (props.allEvents || []).filter(e => (e?.created_by === meId) && isPast(e))
+    const meIdRaw = props.user?.id
+    if (!meIdRaw) return []
+    return (props.allEvents || []).filter(e => (e?.created_by === meIdRaw) && isPast(e))
 })
 const createdPastCountSafe = computed(() => {
     if (typeof props.createdPastCount === 'number' && props.createdPastCount >= 0) {
@@ -284,6 +339,41 @@ const submitContact = () => {
         },
     })
 }
+
+/* =======================
+   ➜ Mes événements FUTURS créés (scroll)
+   ======================= */
+
+// ID utilisateur connecté
+const meId = computed(() => props.user?.id ?? null);
+
+// Détection “créé par moi” (on garde simple)
+const isMine = (e) => {
+    const ids = [
+        e?.created_by,
+        e?.user_id,
+        e?.owner_id,
+        e?.creator_id,
+        e?.creator?.id,
+    ].filter(v => v !== undefined && v !== null);
+    return meId.value != null && ids.map(Number).includes(Number(meId.value));
+};
+
+// Tri simple date + heure (avec parse robuste)
+const byDateAsc = (a, b) => {
+    const sa = `${extractYMD(a?.date)} ${normTime(a?.hour || extractTime(a?.date))}`;
+    const sb = `${extractYMD(b?.date)} ${normTime(b?.hour || extractTime(b?.date))}`;
+    return sa.localeCompare(sb);
+};
+
+// Liste future = uniquement mes events créés ET non passés
+const myFutureCreatedEvents = computed(() =>
+    (props.allEvents || [])
+        .filter(e => isMine(e) && !isPast(e))
+        .sort(byDateAsc)
+);
+
+
 </script>
 
 <template>
@@ -340,98 +430,58 @@ const submitContact = () => {
                             <h1 class="text-lg sm:text-xl font-bold mb-4 text-center"><i
                                 class="fa-solid fa-calendar-alt"></i> <br>Section événements</h1>
 
+                            <!--------------------- Mes évènements créés -------------------------->
+                            <!-- Mes évènements créés -->
                             <div class="bg-gray-100 p-4 rounded-lg mb-4" style="min-height: 120px;">
                                 <div class="flex items-center justify-between mb-4">
-                                    <h1 class="text-lg sm:text-xl font-bold text-center w-full">Créer un événement</h1>
+                                    <h1 class="text-lg sm:text-xl font-bold text-center w-full">
+                                        Mes évènements créés ({{ myActiveFutureCreatedEvents.length }})
+                                    </h1>
                                 </div>
-                                <div class="flex flex-col justify-center items-center h-full">
-                                    <p class="text-gray-600 text-sm mb-4 text-center">
-                                        Organisez votre prochain événement
-                                    </p>
 
-                                    <!-- Bouton désactivé si limite atteinte -->
-                                    <Link :href="atLimit ? '#' : route('events.create')">
-                                        <PrimaryButton
-                                            :disabled="atLimit"
-                                            class="bg-gradient-to-r from-[#59c4b4] to-[#4db3a3] hover:from-[#4db3a3] hover:to-[#42a392]
-                             transform hover:scale-105 transition-all duration-200 shadow-lg px-4 py-2 text-sm
-                             disabled:opacity-60 disabled:cursor-not-allowed">
-                                            <i class="fa-solid fa-plus mr-2"></i>
-                                            {{ atLimit ? 'Limite atteinte' : 'Créer un événement' }}
-                                        </PrimaryButton>
-                                    </Link>
+                                <div class="space-y-3 overflow-y-auto" style="max-height: 360px;">
+                                    <div v-if="myActiveFutureCreatedEvents.length === 0"
+                                         class="text-gray-600 text-center py-8 bg-white rounded-lg border border-dashed border-gray-200">
+                                        <i class="fa-regular fa-calendar text-3xl text-gray-400 mb-2"></i>
+                                        <p class="text-sm">Aucun événement futur et actif créé par vous.</p>
+                                    </div>
 
-                                    <p v-if="atLimit" class="mt-2 text-xs text-red-600">
-                                        Vous avez atteint la limite de {{ maxActiveSlots }} événements <strong>futurs &
-                                        actifs</strong> créés.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div class="bg-gray-100 p-4 rounded-lg mb-4" style="min-height: 120px;">
-                                <h1 class="text-lg sm:text-xl font-bold mb-4 text-center">Vos événements créés</h1>
-
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <!-- Colonne Actifs (FUTURS & ACTIFS uniquement) -->
-                                    <div class="bg-white rounded-lg p-4 border border-[#59c4b4]/30">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <div class="font-semibold text-gray-800">Actifs</div>
-                                            <div class="text-sm text-gray-500">{{ createdActiveCount }} /
-                                                {{ maxActiveSlots }}
-                                            </div>
-                                        </div>
-
-                                        <!-- Compteur + barre -->
-                                        <div class="flex items-end gap-4">
-                                            <div
-                                                class="bg-[#59c4b4] text-white rounded-full w-16 h-16 flex items-center justify-center text-2xl font-bold">
-                                                {{ createdActiveCount }}
-                                            </div>
+                                    <div v-else
+                                         v-for="event in myActiveFutureCreatedEvents"
+                                         :key="'mine-future-' + (event.id ?? event.name_event)"
+                                         @click="goToEvent(event.id)"
+                                         class="bg-white border border-[#59c4b4]/30 rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 hover:border-[#59c4b4] transform hover:scale-[1.02]">
+                                        <div class="flex items-start justify-between">
                                             <div class="flex-1">
-                                                <div class="h-2 rounded bg-gray-200 overflow-hidden">
-                                                    <div
-                                                        class="h-2 rounded bg-[#59c4b4]"
-                                                        :style="{ width: Math.min(100, Math.round((createdActiveCount / maxActiveSlots) * 100)) + '%' }"
-                                                    />
-                                                </div>
-                                                <div class="text-xs text-gray-500 mt-1">
-                                                    {{ remainingActiveSlots }} place(s) restante(s)
+                                                <h3 class="font-semibold mb-1 text-sm text-gray-800 truncate">
+                                                    {{ event.name_event || event.title }}
+                                                </h3>
+                                                <div class="text-xs text-gray-600 space-y-1">
+                                                    <div class="flex items-center">
+                                                        <i class="fa-solid fa-calendar text-[#59c4b4] mr-2"></i>
+                                                        {{ formatDate(event.date) }}
+                                                    </div>
+                                                    <div v-if="(event.hour || extractTime(event.date))" class="flex items-center">
+                                                        <i class="fa-solid fa-clock text-[#59c4b4] mr-2"></i>
+                                                        {{ (event.hour ? normTime(event.hour) : extractTime(event.date)).slice(0, 5) }}
+                                                    </div>
+                                                    <div v-if="event.location" class="flex items-center">
+                                                        <i class="fa-solid fa-map-marker-alt text-[#59c4b4] mr-2"></i>
+                                                        {{ event.location }}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Colonne Passés -->
-                                    <div class="bg-white rounded-lg p-4 border border-gray-200">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <div class="font-semibold text-gray-800">Passés</div>
-                                            <div class="text-sm text-gray-500">{{ createdPastCountSafe }}</div>
-                                        </div>
-
-                                        <div v-if="createdPastCountSafe > 0" class="space-y-2 max-h-40 overflow-y-auto">
-                                            <div
-                                                v-for="e in derivedPastCreatedEvents"
-                                                :key="'created-past-' + e.id"
-                                                class="flex items-center justify-between text-sm bg-gray-50 rounded-md px-2 py-1 border"
-                                            >
-                                                <div class="truncate">
-                                                    <span class="font-medium text-gray-700">{{
-                                                            e.name_event || e.title
-                                                        }}</span>
-                                                    <span class="text-gray-500"> — {{ formatDate(e.date) }}</span>
-                                                </div>
-                                                <button
-                                                    class="ml-3 text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 cursor-default"
-                                                    title="Événement passé"
-                                                >
-                                                    Passé
-                                                </button>
+                                            <div class="flex items-center gap-2 ml-2">
+          <span class="bg-[#59c4b4]/20 text-[#4db3a3] rounded-full px-2 py-1 text-[11px] font-semibold">
+            À venir
+          </span>
+                                                <i class="fa-solid fa-star text-[#ffb347]" title="Créé par vous"></i>
                                             </div>
                                         </div>
-                                        <div v-else class="text-sm text-gray-500">Aucun événement passé.</div>
                                     </div>
                                 </div>
                             </div>
+
 
                             <div id="eventsChart" class="bg-gray-100 p-4 rounded-lg" style="min-height: 320px;"></div>
                         </div>
@@ -513,7 +563,7 @@ const submitContact = () => {
 
                                     <div v-else v-for="event in pastEvents" :key="'past-' + event.id"
                                          @click="goToEvent(event.id)"
-                                         class="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 hover:border-gray-300 transform hover:scale-[1.02] opacity-75">
+                                         class="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-all durée-200 hover:border-gray-300 transform hover:scale-[1.02] opacity-75">
                                         <div class="flex items-start justify-between">
                                             <div class="flex-1">
                                                 <h3 class="font-semibold mb-1 text-sm text-gray-600">{{

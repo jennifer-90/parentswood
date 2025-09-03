@@ -1,5 +1,5 @@
 <script setup>
-import {Head, Link, router} from '@inertiajs/vue3'
+import {Head, Link, router, usePage } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import villes from '@/data/villes_belges.json'
 import {defineProps, ref, watch, computed} from 'vue'
@@ -12,6 +12,9 @@ const props = defineProps({
     filters: Object,
 })
 
+const page = usePage()
+const currentUserId = computed(() => page.props.auth?.user?.id ?? null)
+const isMine = (event) => (event?.created_by ?? null) === currentUserId.value
 
 
 // Filtres (préremplis avec ceux du back pour conserver l'état)
@@ -206,6 +209,17 @@ const resetFilters = () => {
                                 class="group bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 border border-gray-100 hover:border-[#59c4b4]/30"
                             >
                                 <div class="relative h-48 overflow-hidden">
+
+                                    <!-- ★ Créateur -->
+                                    <div
+                                        v-if="isMine(event)"
+                                        class="absolute top-3 left-3 flex items-center gap-1 bg-white/95 text-amber-500 rounded-full px-2 py-1 shadow"
+                                        title="Vous avez créé cet événement"
+                                        aria-label="Créé par vous"
+                                    >
+                                        <i class="fa-solid fa-star"></i>
+                                    </div>
+
                                     <img
                                         :src="event.picture_event ? '/storage/' + event.picture_event : defaultImage"
                                         :alt="'Image de ' + event.name_event"
@@ -226,6 +240,7 @@ const resetFilters = () => {
                                         }}
                                     </div>
                                 </div>
+
                                 <div class="p-4">
                                     <div class="flex items-center text-sm text-gray-500 mb-2">
                                         <svg xmlns="http://www.w3.org/2000/svg"
@@ -246,6 +261,9 @@ const resetFilters = () => {
                                         </span>
                                     </div>
                                 </div>
+
+
+
                             </Link>
                         </div>
 
@@ -339,6 +357,17 @@ const resetFilters = () => {
                                 class="group bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 border border-gray-100 opacity-80 hover:opacity-100"
                             >
                                 <div class="relative h-48 overflow-hidden">
+
+                                    <!-- ★ Créateur -->
+                                    <div
+                                        v-if="isMine(event)"
+                                        class="absolute top-3 left-3 flex items-center gap-1 bg-white/95 text-amber-500 rounded-full px-2 py-1 shadow"
+                                        title="Vous avez créé cet événement"
+                                        aria-label="Créé par vous"
+                                    >
+                                        <i class="fa-solid fa-star"></i>
+                                    </div>
+
                                     <img
                                         :src="event.picture_event ? '/storage/' + event.picture_event : defaultImage"
                                         :alt="'Image de ' + event.name_event"

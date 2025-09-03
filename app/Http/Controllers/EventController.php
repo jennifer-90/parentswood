@@ -84,7 +84,7 @@ class EventController extends Controller
 
         return $base->setTimeFromTimeString($time);
     }
-    
+
     /*#######################################################################################*/
 
     /**==============================================================================================
@@ -129,7 +129,9 @@ class EventController extends Controller
                 default => "Événement mis à jour : {$event->name_event}",
             };
 
-            $lines = [];
+            $dt = $this->eventDateTime($event)->timezone(config('app.timezone'));
+            $lines[] = "Date : " . $dt->translatedFormat('d/m/Y \à H:i');
+
             $lines[] = $subject;
             $lines[] = "Lieu : {$event->location}";
             $lines[] = "Date : {$event->date} à {$event->hour}";
@@ -338,27 +340,43 @@ class EventController extends Controller
     public function store(Request $request)
     {
 
+        $tz = 'Europe/Brussels';
+
         // >>> Garde-fou : limite d’événements futurs (actifs + en attente)
         $this->assertUnderActiveLimit($request->user());
 
         // 1) Valider la requête (messages personnalisés à la fin)
         $validatedData = $request->validate([
-            //Requests
-            'name_event' => 'required|string|max:255',
+            'name_event' => 'required|string|max:50',
             'description' => 'nullable|string',
             'date' => [
                 'required',
                 'date',
                 'after_or_equal:today',
                 function ($attribute, $value, $fail) {
-                    $selectedDate = Carbon::parse($value);
-                    $maxDate = now()->addYear(); // pas plus d’un an dans le futur
-                    if ($selectedDate->gt($maxDate)) {
+                    $maxDate = now()->addYear();
+                    if (Carbon::parse($value)->gt($maxDate)) {
                         $fail('La date ne peut pas être plus d\'un an dans le futur.');
                     }
                 },
             ],
-            'hour' => 'required|date_format:H:i',
+            'hour' => [
+                'required',
+                'date_format:H:i',
+                function ($attribute, $value, $fail) use ($request, $tz) {
+                    $d = $request->input('date');
+                    if (!$d) return; // la règle 'date' s’en chargera
+                    try {
+                        // Construit "YYYY-MM-DD HH:mm" strictement
+                        $dt = Carbon::createFromFormat('Y-m-d H:i', "$d $value", $tz);
+                    } catch (\Exception $e) {
+                        return $fail("Date/heure invalides.");
+                    }
+                    if ($dt->lt(Carbon::now($tz))) {
+                        $fail("La date et l'heure doivent être dans le futur.");
+                    }
+                },
+            ],
             'location' => 'required|string|max:255',
             'min_person' => 'required|integer|min:1',
             'max_person' => 'required|integer|min:1|gt:min_person',
@@ -454,8 +472,11 @@ class EventController extends Controller
         }
 
         try {
+
+            $tz = 'Europe/Brussels'; // au début de update() par ex.
+
             $rules = [
-                'name_event' => ['required', 'string', 'max:255'],
+                'name_event' => ['required', 'string', 'max:50'],
                 'description' => ['nullable', 'string'],
                 'date' => [
                     'bail', 'required', 'date', 'after_or_equal:today',
@@ -468,7 +489,22 @@ class EventController extends Controller
                         if ($d->gt(now()->addYear())) $fail('La date ne peut pas être plus d’un an dans le futur.');
                     },
                 ],
-                'hour' => ['required', 'date_format:H:i'],
+                'hour' => [
+                    'required',
+                    'date_format:H:i',
+                    function ($attribute, $value, $fail) use ($request, $tz) {
+                        $d = $request->input('date');
+                        if (!$d) return;
+                        try {
+                            $dt = \Carbon\Carbon::createFromFormat('Y-m-d H:i', "$d $value", $tz);
+                        } catch (\Exception $e) {
+                            return $fail("Date/heure invalides.");
+                        }
+                        if ($dt->lt(\Carbon\Carbon::now($tz))) {
+                            $fail("La date et l'heure doivent être dans le futur.");
+                        }
+                    },
+                ],
                 'location' => ['required', 'string', 'max:255'],
                 'min_person' => ['required', 'integer', 'min:1'],
                 'max_person' => ['required', 'integer', 'min:1', 'gt:min_person'],
@@ -1110,4 +1146,7 @@ class EventController extends Controller
 
 
 }
+
+
+
 

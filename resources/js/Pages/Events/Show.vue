@@ -16,6 +16,7 @@ const props = defineProps({
 const { event, messages, already_reported } = toRefs(props)
 const alreadyReported = ref(!!already_reported.value)
 
+
 const page = usePage()
 const currentUser = page.props.auth?.user
 const newMessage = ref('')
@@ -234,7 +235,7 @@ const submitCancel = () => {
                 <div class="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
                     <div class="relative h-64 md:h-80">
                         <img
-                            :src="event.picture_event ? `/storage/${event.picture_event}` : '/images/event-default.jpg'"
+                            :src="event.picture_event ? `/storage/${event.picture_event}` : '/images/picture_home.png'"
                             :alt="`Image de ${event.name_event}`"
                             class="w-full h-full object-cover"
                         />

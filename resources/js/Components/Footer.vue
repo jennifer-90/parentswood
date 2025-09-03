@@ -33,19 +33,19 @@ const resolvedUrls = computed(() => ({
                     </p>
 
                     <div class="mt-4 flex items-center gap-3">
-                        <a href="#" aria-label="Instagram"
+                        <a href="https://www.instagram.com/" aria-label="Instagram"
                            class="group inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 hover:border-[#59c4b4] transition-colors">
                             <i class="fa-brands fa-instagram text-gray-500 group-hover:text-[#59c4b4]"></i>
                         </a>
-                        <a href="#" aria-label="Facebook"
+                        <a href="https://www.facebook.com/" aria-label="Facebook"
                            class="group inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 hover:border-[#59c4b4] transition-colors">
                             <i class="fa-brands fa-facebook text-gray-500 group-hover:text-[#59c4b4]"></i>
                         </a>
-                        <a href="#" aria-label="X / Twitter"
+                        <a href="https://x.com/" aria-label="X / Twitter"
                            class="group inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 hover:border-[#59c4b4] transition-colors">
                             <i class="fa-brands fa-x-twitter text-gray-500 group-hover:text-[#59c4b4]"></i>
                         </a>
-                        <a href="#" aria-label="LinkedIn"
+                        <a href="https://fr.linkedin.com/" aria-label="LinkedIn"
                            class="group inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 hover:border-[#59c4b4] transition-colors">
                             <i class="fa-brands fa-linkedin text-gray-500 group-hover:text-[#59c4b4]"></i>
                         </a>
