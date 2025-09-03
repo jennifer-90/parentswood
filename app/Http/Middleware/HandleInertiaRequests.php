@@ -52,7 +52,7 @@ class HandleInertiaRequests extends Middleware
                 },
             ],
 
-            // ✅ Normalisation des messages flash (compat ->with('flash', [...]) ET ->with('success', ...))
+            // Normalisation des messages flash (compat ->with('flash', [...]) ET ->with('success', ...))
             'flash' => function () use ($request) {
                 $session = $request->session();
 

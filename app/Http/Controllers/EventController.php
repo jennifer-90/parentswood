@@ -52,19 +52,40 @@ class EventController extends Controller
         return $this->eventDateTime($event)->isPast();
     }
 
-
+    /**================================================================
+     * CarbonConstruit un objet Carbon "date+heure" pour un événement.
+     *===============================================================**/
     private function eventDateTime(Event $event): Carbon
     {
-        // $event->date peut être string ou Carbon ; on normalise en Carbon
-        $base = $event->getAttribute('date') instanceof Carbon
-            ? $event->getAttribute('date')->copy()
-            : Carbon::parse($event->getAttribute('date'));
+        $rawDate = $event->getAttribute('date');
 
-        $h = $event->hour ? (strlen($event->hour) === 5 ? $event->hour . ':00' : $event->hour) : '00:00:00';
+        // Sécurité : si la date est absente/corrompue, considère l'événement comme passé
+        if (!$rawDate) {
+            return now()->subYear();
+        }
 
-        return $base->setTimeFromTimeString($h);
+        $base = $rawDate instanceof Carbon
+            ? $rawDate->copy()
+            : Carbon::parse((string) $rawDate);
+
+        $rawHour = trim((string) ($event->hour ?? ''));
+        if ($rawHour === '') {
+            $time = '00:00:00';
+        } elseif (strlen($rawHour) === 5) { // "HH:mm"
+            $time = $rawHour . ':00';
+        } else {
+            // On tente de parser tout autre format ("HH:mm:ss" etc.)
+            try {
+                $time = Carbon::parse($rawHour)->format('H:i:s');
+            } catch (\Throwable $e) {
+                $time = '00:00:00'; // fallback safe
+            }
+        }
+
+        return $base->setTimeFromTimeString($time);
     }
-
+    
+    /*#######################################################################################*/
 
     /**==============================================================================================
      * >>  Notifie par e-mail les participants d'un eventuel changement dans l'event (modif|annulation)
@@ -149,6 +170,15 @@ class EventController extends Controller
         }
     }
 
+
+    /**=========================
+     * >> Limite de création par utilisateur (fallback sur la constante)
+     * =========================*/
+    private function userCreateLimit(User $user): int
+    {
+        return max(1, (int)($user->max_create_event ?? self::MAX_ACTIVE_EVENTS));
+    }
+
     /** ===========================================
      * >> Nombre d'événements ACTIFS| EN ATTENTE pour un user.
      * =============================================*/
@@ -158,7 +188,7 @@ class EventController extends Controller
         $now = now()->format('H:i:s');
 
         return Event::where('created_by', $user->id)
-            ->whereNull('cancelled_at')
+            ->whereNull('cancelled_at') // non annulé
             ->where(function ($q) {
                 // ACTIFS
                 $q->where('inactif', false)
@@ -166,7 +196,8 @@ class EventController extends Controller
                     ->orWhere(function ($q2) {
                         $q2->whereNull('validated_by_id')
                             ->where(function ($q3) {
-                                $q3->whereNull('confirmed')->orWhere('confirmed', false);
+                                $q3->whereNull('confirmed')
+                                    ->orWhere('confirmed', false);
                             });
                     });
             })
@@ -181,13 +212,19 @@ class EventController extends Controller
     }
 
 
+    /**=========================
+     * >> Garde-fou de limite AVANT création
+     * =========================*/
     private function assertUnderActiveLimit(User $user): void
     {
         $count = $this->activeEventsCountFor($user);
-        if ($count >= self::MAX_ACTIVE_EVENTS) {
+        $limit = $this->userCreateLimit($user);
+
+        if ($count >= $limit) {
             throw ValidationException::withMessages([
                 // Si ta vue n’affiche pas errors.limit, mets "name_event" à la place
-                'limit' => "Tu as atteint la limite de " . self::MAX_ACTIVE_EVENTS . " événements actifs ou en attente de validation. Désactive/annule un événement avant d’en créer un nouveau.",
+                'limit' => "Limite atteinte : {$count}/{$limit} événement(s) à venir (actifs ou en attente). "
+                    . "Désactive/annule un événement avant d’en créer un nouveau.",
             ]);
         }
     }
@@ -301,7 +338,7 @@ class EventController extends Controller
     public function store(Request $request)
     {
 
-
+        // >>> Garde-fou : limite d’événements futurs (actifs + en attente)
         $this->assertUnderActiveLimit($request->user());
 
         // 1) Valider la requête (messages personnalisés à la fin)
@@ -369,7 +406,7 @@ class EventController extends Controller
         // 7) Rediriger vers la liste avec un message de succès
         return redirect()
             ->route('events.index')
-            ->with('flash', ['success' => 'Événement créé !']);
+            ->with('flash', ['success' => 'Événement créé ! Attends maintenant la confirmation des admins']);
     }
 
     /**======================================================
@@ -423,7 +460,7 @@ class EventController extends Controller
                 'date' => [
                     'bail', 'required', 'date', 'after_or_equal:today',
                     function ($attribute, $value, $fail): void {
-                        $d = \Carbon\Carbon::make($value);
+                        $d = Carbon::make($value);
                         if (!$d) {
                             $fail('La date est invalide.');
                             return;
@@ -479,11 +516,11 @@ class EventController extends Controller
             if (isset($original['hour']) && strlen((string)$original['hour']) === 5) $original['hour'] .= ':00';
             if ($original['date'] instanceof \Carbon\Carbon) $original['date'] = $original['date']->format('Y-m-d');
 
-            // ⚠️ sortir la pivot du validated
+            //sortir la pivot du validated
             $ciIds = $request->input('centres_interet', []);
             unset($validated['centres_interet']);
 
-            // ⚠️ FIX: préciser la table dans les pluck pour éviter l’ambiguïté
+            // FIX: préciser la table dans les pluck pour éviter l’ambiguïté
             $oldTags = $event->centresInteret()
                 ->pluck('centres_interet.id')
                 ->sort()->values()->all();
@@ -491,7 +528,6 @@ class EventController extends Controller
             $changes = [];
 
             \DB::transaction(function () use ($event, $validated, $watched, $original, $oldTags, $ciIds, &$changes) {
-
                 $toFill = array_intersect_key($validated, array_flip($event->getFillable()));
                 $event->fill($toFill);
 
@@ -511,7 +547,7 @@ class EventController extends Controller
 
                 $event->centresInteret()->sync($ciIds);
 
-                // ⚠️ FIX: idem ici
+                // FIX: idem ici
                 $newTags = $event->centresInteret()
                     ->pluck('centres_interet.id')
                     ->sort()->values()->all();
@@ -579,7 +615,7 @@ class EventController extends Controller
         // 4) Capacité atteinte ?
         $currentCount = $event->participants()->count();
         if ($currentCount >= (int)$event->max_person) {
-            return back()->with('flash', ['error' => 'Désolé, le maximum de particpant est atteint.']);
+            return back()->with('flash', ['error' => 'Désolé, le maximum de particpants est atteint.']);
         }
 
         // 5) Ajout (idempotent) à la pivot
@@ -697,7 +733,8 @@ class EventController extends Controller
                 'is_past' => $this->eventIsPast($event),
             ]),
             'messages' => $messages,
-            'already_reported' => session()->has("reported_event_{$event->id}"),
+            'already_reported' => session()->has("reported_event_{$event->id}_user_" . auth()->id()),
+
         ]);
     }
 

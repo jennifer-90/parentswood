@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
-import { ref, computed, onMounted, nextTick } from 'vue';
+import {Head, Link, router, usePage} from '@inertiajs/vue3';
+import {ref, computed, onMounted, nextTick} from 'vue';
 
 import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -15,24 +15,63 @@ import Flash from "@/Components/Flash.vue";
 
 const props = defineProps({
     user: Object,
-    allEvents: { type: Array, default: () => [] },
-    upcomingEvents: { type: Array, default: () => [] },
-    pastEvents:  { type: Array, default: () => [] },
+    allEvents: {type: Array, default: () => []},
+    upcomingEvents: {type: Array, default: () => []},
+    pastEvents: {type: Array, default: () => []},
 
-    userCreatedEventsCount: { type: Number, default: 0 },
-    createdActiveCount:     { type: Number, default: 0 },
-    createdInactiveCount:   { type: Number, default: 0 },
-    inactiveCreatedEvents:  { type: Array,  default: () => [] },
-    maxActiveSlots:         { type: Number, default: 10 },
+    userCreatedEventsCount: {type: Number, default: 0},
 
-    stats: { type: Object, default: () => ({ totalUpcoming: 0, totalPast: 0, nextEvent: null }) },
-    userParticipatedEvents: { type: Array, default: () => [] },
-    chartData: { type: Array, default: () => [] },
-    isStaff: { type: Boolean, default: false },
-    blockedUsers: { type: Array, default: () => [] },
+    // === EXISTANT (toujours utilisé pour la jauge) ===
+    createdActiveCount: {type: Number, default: 0},
+
+    // === OBSOLETTE côté affichage : on ne s’en sert plus pour « Passés »
+    createdInactiveCount: {type: Number, default: 0},
+    inactiveCreatedEvents: {type: Array, default: () => []},
+
+    // === NOUVEAU (optionnel)
+    pastCreatedEvents: {type: Array, default: () => []},
+    createdPastCount: {type: Number, default: null},
+
+    maxActiveSlots: {type: Number, default: 10},
+
+    stats: {type: Object, default: () => ({totalUpcoming: 0, totalPast: 0, nextEvent: null})},
+    userParticipatedEvents: {type: Array, default: () => []},
+    chartData: {type: Array, default: () => []},
+    isStaff: {type: Boolean, default: false},
+    blockedUsers: {type: Array, default: () => []},
 });
 
-// Options pour FullCalendar avec les vrais événements et amélioration visuelle
+/* =======================
+   Helpers "date/heure"
+   ======================= */
+
+// Normalise une date+heure en objet Date (UTC)
+const toJsDate = (d, h) => {
+    if (!d) return null;
+    try {
+        const day = typeof d === 'string' ? d : new Date(d).toISOString().slice(0, 10);
+        let time = (h || '00:00').toString();
+        // autorise HH:mm ou HH:mm:ss
+        if (/^\d{2}:\d{2}$/.test(time)) time = `${time}:00`;
+        // Ajout du Z pour forcer UTC
+        const isoish = `${day}T${time}Z`;
+        const jsd = new Date(isoish);
+        return isNaN(jsd.getTime()) ? null : jsd;
+    } catch (e) {
+        return null;
+    }
+};
+
+// Dit si un event est déjà passé (comparé "maintenant" – epoch UTC)
+const isPast = (ev) => {
+    const jsd = toJsDate(ev?.date, ev?.hour);
+    if (!jsd) return true; // sécurité : si invalide, on considère passé
+    return jsd.getTime() < Date.now();
+};
+
+/* =======================
+   FullCalendar options
+   ======================= */
 const calendarOptions = computed(() => ({
     plugins: [dayGridPlugin, interactionPlugin],
     initialView: 'dayGridMonth',
@@ -41,6 +80,7 @@ const calendarOptions = computed(() => ({
         center: 'title',
         right: 'dayGridMonth,dayGridWeek,dayGridDay',
     },
+    timeZone: 'UTC', // <-- important pour rester en phase avec le back
     selectable: true,
     editable: false,
     locale: frLocale,
@@ -50,45 +90,46 @@ const calendarOptions = computed(() => ({
     moreLinkClick: 'popover',
     eventDisplay: 'block',
     dayGridMonth: {
-        titleFormat: { year: 'numeric', month: 'long' }
+        titleFormat: {year: 'numeric', month: 'long'}
     },
     dayGridWeek: {
-        titleFormat: { year: 'numeric', month: 'short', day: 'numeric' }
+        titleFormat: {year: 'numeric', month: 'short', day: 'numeric'}
     },
     dayGridDay: {
-        titleFormat: { year: 'numeric', month: 'long', day: 'numeric' }
+        titleFormat: {year: 'numeric', month: 'long', day: 'numeric'}
     },
     events: props.allEvents || [],
-    eventClick: function(info) {
+    eventClick: function (info) {
         if (info.event.url) {
             window.open(info.event.url, '_blank');
             info.jsEvent.preventDefault();
         }
     },
-    eventMouseEnter: function(info) {
+    eventMouseEnter: function (info) {
         info.el.style.cursor = 'pointer';
         info.el.style.transform = 'scale(1.02)';
         info.el.style.transition = 'all 0.2s ease';
     },
-    eventMouseLeave: function(info) {
+    eventMouseLeave: function (info) {
         info.el.style.transform = 'scale(1)';
     }
 }));
 
-// Formatage de la date pour l'affichage
+// Formatage de la date pour l'affichage (UTC)
 const formatDate = (dateString) => {
-    const date = new Date(dateString);
+    const date = new Date(`${dateString}T00:00:00Z`);
     return date.toLocaleDateString('fr-FR', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        timeZone: 'UTC'
     });
 };
 
 // Fonction pour naviguer vers un événement
 const goToEvent = (eventId) => {
-    window.open(route('events.show', { event: eventId }), '_blank');
+    window.open(route('events.show', {event: eventId}), '_blank');
 };
 
 // État pour l'accordéon historique
@@ -103,13 +144,13 @@ const formatMonth = (month) => {
     return months[month - 1];
 };
 
-// Fonction pour formater la prochaine date d'événement
+// Fonction pour formater la prochaine date d'événement (UTC)
 const formatNextEventDate = (event) => {
     if (!event) return '';
-    const date = new Date(event.date);
-    const day = date.getDate();
-    const month = formatMonth(date.getMonth() + 1);
-    const time = event.hour || '';
+    const d = new Date(`${event.date}T00:00:00Z`);
+    const day = d.getUTCDate();
+    const month = formatMonth(d.getUTCMonth() + 1);
+    const time = (event.hour || '').toString(); // déjà HH:mm(:ss) en UTC
     const location = event.location || '';
     return `${day} ${month} ${time ? 'à ' + time : ''} ${location ? 'à ' + location : ''}`;
 };
@@ -138,7 +179,7 @@ const createChart = () => {
     const layout = {
         title: {
             text: 'Mes événements par mois',
-            font: { size: 16, color: '#374151' }
+            font: {size: 16, color: '#374151'}
         },
         xaxis: {
             title: 'Mois',
@@ -148,10 +189,10 @@ const createChart = () => {
             title: 'Nombre d\'événements',
             dtick: 1
         },
-        margin: { t: 50, l: 50, r: 20, b: 80 },
+        margin: {t: 50, l: 50, r: 20, b: 80},
         plot_bgcolor: 'rgba(0,0,0,0)',
         paper_bgcolor: 'rgba(0,0,0,0)',
-        font: { family: 'Inter, sans-serif' }
+        font: {family: 'Inter, sans-serif'}
     };
 
     const config = {
@@ -161,8 +202,6 @@ const createChart = () => {
 
     if (window && window.Plotly) {
         window.Plotly.newPlot('eventsChart', data, layout, config)
-    } else {
-        // console.warn('Plotly non chargé – graphique ignoré.')
     }
 };
 
@@ -176,8 +215,6 @@ onMounted(() => {
 const page = usePage();
 
 // -------------------- Rôles / Staff --------------------
-// on part du prop `isStaff` (contrôleur) et on retombe
-// sur un calcul local si le prop n’est pas fourni.
 const userRoles = computed(() => page.props.auth?.user?.roles ?? props.user?.roles ?? [])
 const hasRole = (name) => (userRoles.value || []).some((r) => (r?.name ?? r) === name)
 const isStaff = computed(() => props.isStaff || hasRole('Admin') || hasRole('Super-admin'))
@@ -191,20 +228,39 @@ const unblock = (userId) => {
     })
 }
 
-// Un petit helper pour l'affichage
+/* =======================
+   Limite actifs futurs
+   ======================= */
 const remainingActiveSlots = computed(() => {
     const left = props.maxActiveSlots - props.createdActiveCount
     return left < 0 ? 0 : left
 })
+const atLimit = computed(() => props.createdActiveCount >= props.maxActiveSlots)
 
+/* ==========================================================
+   Événements CRÉÉS : colonne « Passés »
+   ========================================================== */
+const derivedPastCreatedEvents = computed(() => {
+    if (props.pastCreatedEvents?.length) return props.pastCreatedEvents
+    const meId = props.user?.id
+    if (!meId) return []
+    return (props.allEvents || []).filter(e => (e?.created_by === meId) && isPast(e))
+})
+const createdPastCountSafe = computed(() => {
+    if (typeof props.createdPastCount === 'number' && props.createdPastCount >= 0) {
+        return props.createdPastCount
+    }
+    return derivedPastCreatedEvents.value.length
+})
 
-// ⚠️ NEW: état du formulaire + submit
+/* =======================
+   Contact support
+   ======================= */
 const contactForm = ref({
-    role: 'Admin',      // 'Admin' | 'Super-admin'
+    role: 'Admin', // 'Admin' | 'Super-admin'
     subject: '',
     message: '',
 })
-
 const sending = ref(false)
 const errors = ref({})
 const notice = ref(null)
@@ -223,27 +279,25 @@ const submitContact = () => {
         onSuccess: () => {
             sending.value = false
             notice.value = "Votre message a bien été envoyé."
-            contactForm.value = { role: 'Admin', subject: '', message: '' }
+            contactForm.value = {role: 'Admin', subject: '', message: ''}
             setTimeout(() => (notice.value = null), 4000)
         },
     })
 }
-
-
-
-
 </script>
 
 <template>
-    <Head title="Mon tableau de bord" />
+    <Head title="Mon tableau de bord"/>
     <AuthenticatedLayout>
         <div class="py-4 bg-[#f9f5f2] ">
             <div class="mx-auto w-full px-3 sm:px-5">
                 <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
-                    <h3 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-4 sm:mb-6 text-center">Mon tableau de bord</h3>
+                    <h3 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-4 sm:mb-6 text-center">Mon tableau de
+                        bord</h3>
 
                     <!-- Bandeau récapitulatif -->
-                    <div class="bg-transparent border-2 border-[#ffb347] rounded-lg p-4 mb-6" style="background-color: rgba(255, 179, 71, 0.05);">
+                    <div class="bg-transparent border-2 border-[#ffb347] rounded-lg p-4 mb-6"
+                         style="background-color: rgba(255, 179, 71, 0.05);">
                         <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
                             <div class="flex items-center gap-3">
                                 <div class="bg-[#ffb347] text-white rounded-full p-2">
@@ -271,49 +325,66 @@ const submitContact = () => {
 
                     <!-- Layout responsive : vertical sur mobile, horizontal sur desktop -->
                     <div class="flex flex-col xl:flex-row gap-4 sm:gap-6">
-                        <!-- Calendrier agrandi -->
-                        <div class="xl:flex-1 bg-[#59c4b4]/10 p-4 rounded-lg calendar-container" style="min-height: 600px;">
-                            <h1 class="text-lg sm:text-xl font-bold mb-4 text-center"><i class="fa-solid fa-calendar-days"></i> <br>Calendrier des événements</h1>
+                        <!-- Calendrier -->
+                        <div class="xl:flex-1 bg-[#59c4b4]/10 p-4 rounded-lg calendar-container"
+                             style="min-height: 600px;">
+                            <h1 class="text-lg sm:text-xl font-bold mb-4 text-center"><i
+                                class="fa-solid fa-calendar-days"></i> <br>Calendrier des événements</h1>
                             <div class="bg-white rounded-lg p-3 shadow-sm" style="overflow: hidden;">
-                                <FullCalendar :options="calendarOptions" />
+                                <FullCalendar :options="calendarOptions"/>
                             </div>
                         </div>
 
-                        <!-- Section événements - Taille harmonisée -->
+                        <!-- Section événements -->
                         <div class="xl:flex-1 bg-[#59c4b4]/10 p-4 rounded-lg" style="min-height: 600px;">
-                            <h1 class="text-lg sm:text-xl font-bold mb-4 text-center"><i class="fa-solid fa-calendar-alt"></i> <br>Section événements</h1>
+                            <h1 class="text-lg sm:text-xl font-bold mb-4 text-center"><i
+                                class="fa-solid fa-calendar-alt"></i> <br>Section événements</h1>
 
                             <div class="bg-gray-100 p-4 rounded-lg mb-4" style="min-height: 120px;">
                                 <div class="flex items-center justify-between mb-4">
                                     <h1 class="text-lg sm:text-xl font-bold text-center w-full">Créer un événement</h1>
                                 </div>
                                 <div class="flex flex-col justify-center items-center h-full">
-                                    <p class="text-gray-600 text-sm mb-4 text-center">Organisez votre prochain événement</p>
-                                    <Link :href="route('events.create')">
-                                        <PrimaryButton class="bg-gradient-to-r from-[#59c4b4] to-[#4db3a3] hover:from-[#4db3a3] hover:to-[#42a392] transform hover:scale-105 transition-all duration-200 shadow-lg px-4 py-2 text-sm">
+                                    <p class="text-gray-600 text-sm mb-4 text-center">
+                                        Organisez votre prochain événement
+                                    </p>
+
+                                    <!-- Bouton désactivé si limite atteinte -->
+                                    <Link :href="atLimit ? '#' : route('events.create')">
+                                        <PrimaryButton
+                                            :disabled="atLimit"
+                                            class="bg-gradient-to-r from-[#59c4b4] to-[#4db3a3] hover:from-[#4db3a3] hover:to-[#42a392]
+                             transform hover:scale-105 transition-all duration-200 shadow-lg px-4 py-2 text-sm
+                             disabled:opacity-60 disabled:cursor-not-allowed">
                                             <i class="fa-solid fa-plus mr-2"></i>
-                                            Créer un événement
+                                            {{ atLimit ? 'Limite atteinte' : 'Créer un événement' }}
                                         </PrimaryButton>
                                     </Link>
+
+                                    <p v-if="atLimit" class="mt-2 text-xs text-red-600">
+                                        Vous avez atteint la limite de {{ maxActiveSlots }} événements <strong>futurs &
+                                        actifs</strong> créés.
+                                    </p>
                                 </div>
                             </div>
-
-
 
                             <div class="bg-gray-100 p-4 rounded-lg mb-4" style="min-height: 120px;">
                                 <h1 class="text-lg sm:text-xl font-bold mb-4 text-center">Vos événements créés</h1>
 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <!-- Colonne Actifs -->
+                                    <!-- Colonne Actifs (FUTURS & ACTIFS uniquement) -->
                                     <div class="bg-white rounded-lg p-4 border border-[#59c4b4]/30">
                                         <div class="flex items-center justify-between mb-2">
                                             <div class="font-semibold text-gray-800">Actifs</div>
-                                            <div class="text-sm text-gray-500">{{ createdActiveCount }} / {{ maxActiveSlots }}</div>
+                                            <div class="text-sm text-gray-500">{{ createdActiveCount }} /
+                                                {{ maxActiveSlots }}
+                                            </div>
                                         </div>
 
                                         <!-- Compteur + barre -->
                                         <div class="flex items-end gap-4">
-                                            <div class="bg-[#59c4b4] text-white rounded-full w-16 h-16 flex items-center justify-center text-2xl font-bold">
+                                            <div
+                                                class="bg-[#59c4b4] text-white rounded-full w-16 h-16 flex items-center justify-center text-2xl font-bold">
                                                 {{ createdActiveCount }}
                                             </div>
                                             <div class="flex-1">
@@ -330,28 +401,42 @@ const submitContact = () => {
                                         </div>
                                     </div>
 
-                                    <!-- Colonne Inactifs -->
+                                    <!-- Colonne Passés -->
                                     <div class="bg-white rounded-lg p-4 border border-gray-200">
                                         <div class="flex items-center justify-between mb-2">
-                                            <div class="font-semibold text-gray-800">Inactifs</div>
-                                            <div class="text-sm text-gray-500">{{ createdInactiveCount }}</div>
+                                            <div class="font-semibold text-gray-800">Passés</div>
+                                            <div class="text-sm text-gray-500">{{ createdPastCountSafe }}</div>
                                         </div>
 
-                                        <div v-if="inactiveCreatedEvents.length" class="space-y-2 max-h-40 overflow-y-auto">
-
+                                        <div v-if="createdPastCountSafe > 0" class="space-y-2 max-h-40 overflow-y-auto">
+                                            <div
+                                                v-for="e in derivedPastCreatedEvents"
+                                                :key="'created-past-' + e.id"
+                                                class="flex items-center justify-between text-sm bg-gray-50 rounded-md px-2 py-1 border"
+                                            >
+                                                <div class="truncate">
+                                                    <span class="font-medium text-gray-700">{{
+                                                            e.name_event || e.title
+                                                        }}</span>
+                                                    <span class="text-gray-500"> — {{ formatDate(e.date) }}</span>
+                                                </div>
+                                                <button
+                                                    class="ml-3 text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 cursor-default"
+                                                    title="Événement passé"
+                                                >
+                                                    Passé
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div v-else class="text-sm text-gray-500">Aucun événement inactif.</div>
+                                        <div v-else class="text-sm text-gray-500">Aucun événement passé.</div>
                                     </div>
                                 </div>
-                             </div>
-
-
-
+                            </div>
 
                             <div id="eventsChart" class="bg-gray-100 p-4 rounded-lg" style="min-height: 320px;"></div>
                         </div>
 
-                        <!-- Mes événements auxquels je participe - Taille harmonisée -->
+                        <!-- Mes événements auxquels je participe -->
                         <div class="xl:flex-1 bg-[#59c4b4]/10 p-4 rounded-lg" style="min-height: 600px;">
                             <h1 class="text-lg sm:text-xl font-bold mb-4 text-center">
                                 <i class="fa-solid fa-calendar-check"></i> <br>
@@ -378,9 +463,9 @@ const submitContact = () => {
                                          class="bg-white border border-[#59c4b4]/30 rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 hover:border-[#59c4b4] transform hover:scale-[1.02]">
                                         <div class="flex items-start justify-between">
                                             <div class="flex-1">
-
-                                                <h3 class="font-semibold mb-1 text-sm text-gray-800">{{ event.name_event }}</h3>
-
+                                                <h3 class="font-semibold mb-1 text-sm text-gray-800">{{
+                                                        event.name_event
+                                                    }}</h3>
                                                 <div class="text-xs text-gray-600 space-y-1">
                                                     <div class="flex items-center">
                                                         <i class="fa-solid fa-calendar text-[#59c4b4] mr-2"></i>
@@ -396,7 +481,8 @@ const submitContact = () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div class="bg-[#59c4b4]/20 text-[#4db3a3] rounded-full px-2 py-1 text-xs font-semibold ml-2">
+                                            <div
+                                                class="bg-[#59c4b4]/20 text-[#4db3a3] rounded-full px-2 py-1 text-xs font-semibold ml-2">
                                                 À venir
                                             </div>
                                         </div>
@@ -409,7 +495,8 @@ const submitContact = () => {
                                 <button @click="showHistory = !showHistory"
                                         class="w-full flex items-center justify-between bg-gray-200 hover:bg-gray-300 rounded-lg p-3 transition-colors duration-200">
                                     <div class="flex items-center gap-2">
-                                        <div class="bg-gray-500 text-white rounded-full px-3 py-1 text-xs font-semibold">
+                                        <div
+                                            class="bg-gray-500 text-white rounded-full px-3 py-1 text-xs font-semibold">
                                             HISTORIQUE
                                         </div>
                                         <span class="text-sm text-gray-600">({{ stats.totalPast }})</span>
@@ -417,7 +504,8 @@ const submitContact = () => {
                                     <i :class="['fa-solid', showHistory ? 'fa-chevron-up' : 'fa-chevron-down', 'text-gray-600']"></i>
                                 </button>
 
-                                <div v-show="showHistory" class="mt-3 space-y-3 overflow-y-auto" style="max-height: 200px;">
+                                <div v-show="showHistory" class="mt-3 space-y-3 overflow-y-auto"
+                                     style="max-height: 200px;">
                                     <div v-if="pastEvents.length === 0" class="text-gray-600 text-center py-4">
                                         <i class="fa-solid fa-history text-2xl text-gray-400 mb-2"></i>
                                         <p class="text-sm">Aucun événement passé</p>
@@ -428,7 +516,9 @@ const submitContact = () => {
                                          class="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 hover:border-gray-300 transform hover:scale-[1.02] opacity-75">
                                         <div class="flex items-start justify-between">
                                             <div class="flex-1">
-                                                <h3 class="font-semibold mb-1 text-sm text-gray-600">{{ event.name_event }}</h3>
+                                                <h3 class="font-semibold mb-1 text-sm text-gray-600">{{
+                                                        event.name_event
+                                                    }}</h3>
                                                 <div class="text-xs text-gray-500 space-y-1">
                                                     <div class="flex items-center">
                                                         <i class="fa-solid fa-calendar text-gray-500 mr-2"></i>
@@ -444,7 +534,8 @@ const submitContact = () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div class="bg-gray-100 text-gray-600 rounded-full px-2 py-1 text-xs font-semibold ml-2">
+                                            <div
+                                                class="bg-gray-100 text-gray-600 rounded-full px-2 py-1 text-xs font-semibold ml-2">
                                                 Passé
                                             </div>
                                         </div>
@@ -452,163 +543,162 @@ const submitContact = () => {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div> <!-- /layout -->
                 </div>
             </div>
         </div>
 
-
-
         <div class="mt-6">
-            <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6"> <!-- ⚠️ fond BLANC -->
-
-                <!-- ⚠️ panneau CRÈME conservé -->
+            <div class="bg-white shadow-lg rounded-lg p-4 sm:p-6">
                 <div class="bg-[#59c4b4]/10 p-4 rounded-lg">
                     <h1 class="text-lg sm:text-xl font-bold mb-4 text-center">
                         <i class="fa-solid fa-people-group"></i> <br>
                         Support & utilisateurs bloqués
                     </h1>
 
-
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- ====== Colonne gauche : Utilisateurs bloqués ====== -->
-                <div class="bg-white rounded-lg p-4 shadow-sm">
-                    <h2 class="font-semibold text-gray-800 mb-3">
-                        <i class="fa-solid fa-user-slash mr-2"></i> Utilisateurs bloqués
+                        <!-- ====== Colonne gauche : Utilisateurs bloqués ====== -->
+                        <div class="bg-white rounded-lg p-4 shadow-sm">
+                            <h2 class="font-semibold text-gray-800 mb-3">
+                                <i class="fa-solid fa-user-slash mr-2"></i> Utilisateurs bloqués
+                            </h2>
+                            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+                                <Flash/>
+                            </div>
 
-                    </h2>
-                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-                        <Flash />
-                    </div>
+                            <!-- Empty state -->
+                            <div v-if="blocked.length === 0" class="py-6 text-center text-gray-500">
+                                <i class="fa-regular fa-face-smile-beam text-2xl mb-2"></i>
+                                <p>Aucun utilisateur bloqué.</p>
+                            </div>
 
+                            <!-- Liste -->
+                            <div v-else class="divide-y">
+                                <div
+                                    v-for="u in blocked"
+                                    :key="u.id"
+                                    class="py-3 flex items-center justify-between"
+                                >
+                                    <div class="flex items-center gap-3">
+                                        <img
+                                            :src="u.picture_profil_url || defaultAvatar"
+                                            :alt="u.pseudo"
+                                            class="w-10 h-10 rounded-full object-cover border border-gray-200"
+                                            @error="$event.target.src = defaultAvatar"
+                                        />
+                                        <div>
+                                            <div class="font-medium text-gray-800">{{ u.pseudo }}</div>
+                                            <div v-if="u.first_name || u.last_name" class="text-xs text-gray-500">
+                                                {{ u.first_name }} {{ u.last_name }}
+                                            </div>
+                                        </div>
+                                    </div>
 
-
-                    <!-- Empty state -->
-                    <div v-if="blocked.length === 0" class="py-6 text-center text-gray-500">
-                        <i class="fa-regular fa-face-smile-beam text-2xl mb-2"></i>
-                        <p>Aucun utilisateur bloqué.</p>
-                    </div>
-
-                    <!-- Liste -->
-                    <div v-else class="divide-y">
-                        <div
-                            v-for="u in blocked"
-                            :key="u.id"
-                            class="py-3 flex items-center justify-between"
-                        >
-                            <div class="flex items-center gap-3">
-                                <img
-                                    :src="u.picture_profil_url || defaultAvatar"
-                                    :alt="u.pseudo"
-                                    class="w-10 h-10 rounded-full object-cover border border-gray-200"
-                                    @error="$event.target.src = defaultAvatar"
-                                />
-                                <div>
-                                    <div class="font-medium text-gray-800">{{ u.pseudo }}</div>
-                                    <div v-if="u.first_name || u.last_name" class="text-xs text-gray-500">
-                                        {{ u.first_name }} {{ u.last_name }}
+                                    <div class="flex items-center gap-3">
+                                        <Link
+                                            v-if="isStaff"
+                                            :href="route('users.show', u.pseudo)"
+                                            class="text-sm text-[#59c4b4] hover:underline"
+                                        >
+                                            Voir
+                                        </Link>
+                                        <button
+                                            type="button"
+                                            @click="unblock(u.id)"
+                                            class="px-3 py-1.5 text-sm rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
+                                            title="Débloquer cet utilisateur"
+                                        >
+                                            Débloquer
+                                        </button>
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <div class="flex items-center gap-3">
-                                <Link
-                                    v-if="isStaff"
-                                    :href="route('users.show', u.pseudo)"
-                                    class="text-sm text-[#59c4b4] hover:underline"
-                                >
-                                    Voir
-                                </Link>
-                                <button
-                                    type="button"
-                                    @click="unblock(u.id)"
-                                    class="px-3 py-1.5 text-sm rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
-                                    title="Débloquer cet utilisateur"
-                                >
-                                    Débloquer
+                        <!-- ====== Colonne droite : Contacter l’équipe ====== -->
+                        <div class="bg-white rounded-lg p-4 shadow-sm">
+                            <h2 class="font-semibold text-gray-800 mb-3">
+                                <i class="fa-solid fa-envelope mr-2"></i> Contacter l’équipe
+                            </h2>
+
+                            <!-- message de succès -->
+                            <div v-if="notice" class="mb-4 rounded-md bg-green-50 p-3 text-green-800 text-sm">
+                                {{ notice }}
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="sm:col-span-1">
+                                    <label for="c-role" class="block text-sm font-medium text-gray-700 mb-1">Destinataire</label>
+                                    <select id="c-role" v-model="contactForm.role" class="...">
+                                        <option value="Admin">Admin</option>
+                                        <option value="Super-admin">Super-admin</option>
+                                    </select>
+                                    <p v-if="errors.role" class="mt-1 text-xs text-red-600">⚠️ {{ errors.role }}</p>
+                                </div>
+
+                                <div class="sm:col-span-2">
+                                    <label for="c-subject"
+                                           class="block text-sm font-medium text-gray-700 mb-1">Sujet</label>
+                                    <input id="c-subject" type="text" v-model="contactForm.subject"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent"
+                                           placeholder="Décrivez brièvement votre problème">
+                                    <p v-if="errors.subject" class="mt-1 text-xs text-red-600">⚠️ {{
+                                            errors.subject
+                                        }}</p>
+                                </div>
+
+                                <div class="sm:col-span-3">
+                                    <label for="c-message"
+                                           class="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                                    <textarea id="c-message" v-model="contactForm.message" rows="5"
+                                              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent"
+                                              placeholder="Expliquez votre situation en quelques lignes"></textarea>
+                                    <p v-if="errors.message" class="mt-1 text-xs text-red-600">⚠️ {{
+                                            errors.message
+                                        }}</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 flex justify-end">
+                                <button @click="submitContact" :disabled="sending"
+                                        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white
+                               bg-gradient-to-r from-[#59c4b4] to-[#4db3a3]
+                               hover:from-[#4db3a3] hover:to-[#3aa796]
+                               disabled:opacity-60 disabled:cursor-not-allowed">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                    <span>{{ sending ? 'Envoi…' : 'Envoyer' }}</span>
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
-
-
-
-                <!-- ====== Colonne droite : Contacter l’équipe ====== -->
-                <div class="bg-white rounded-lg p-4 shadow-sm">
-                    <h2 class="font-semibold text-gray-800 mb-3">
-                        <i class="fa-solid fa-envelope mr-2"></i> Contacter l’équipe
-                    </h2>
-
-                    <!-- ⚠️ message de succès -->
-                    <div v-if="notice" class="mb-4 rounded-md bg-green-50 p-3 text-green-800 text-sm">
-                        {{ notice }}
-                    </div>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div class="sm:col-span-1">
-                            <label for="c-role" class="block text-sm font-medium text-gray-700 mb-1">Destinataire</label>
-
-                            <select id="c-role" v-model="contactForm.role" class="...">
-                                <option value="Admin">Admin</option>
-                                <option value="Super-admin">Super-admin</option>
-                            </select>
-                            <p v-if="errors.role" class="mt-1 text-xs text-red-600">⚠️ {{ errors.role }}</p>
-
-                        </div>
-
-                        <div class="sm:col-span-2">
-                            <label for="c-subject" class="block text-sm font-medium text-gray-700 mb-1">Sujet</label>
-                            <input id="c-subject" type="text" v-model="contactForm.subject"
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent"
-                                   placeholder="Décrivez brièvement votre problème">
-                            <p v-if="errors.subject" class="mt-1 text-xs text-red-600">⚠️ {{ errors.subject }}</p>
-                        </div>
-
-                        <div class="sm:col-span-3">
-                            <label for="c-message" class="block text-sm font-medium text-gray-700 mb-1">Message</label>
-                            <textarea id="c-message" v-model="contactForm.message" rows="5"
-                                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#59c4b4] focus:border-transparent"
-                                      placeholder="Expliquez votre situation en quelques lignes"></textarea>
-                            <p v-if="errors.message" class="mt-1 text-xs text-red-600">⚠️ {{ errors.message }}</p>
-                        </div>
-                    </div>
-
-                    <div class="mt-4 flex justify-end">
-                        <button @click="submitContact" :disabled="sending"
-                                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white
-                 bg-gradient-to-r from-[#59c4b4] to-[#4db3a3]
-                 hover:from-[#4db3a3] hover:to-[#3aa796]
-                 disabled:opacity-60 disabled:cursor-not-allowed">
-                            <i class="fa-solid fa-paper-plane"></i>
-                            <span>{{ sending ? 'Envoi…' : 'Envoyer' }}</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
             </div>
         </div>
 
-
-
-        <!-- Aide rapide / explications du tableau de bord -->
+        <!-- Aide rapide -->
         <div class="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 leading-relaxed">
             <h3 class="font-semibold text-gray-800 mb-2">
                 <i class="fa-solid fa-circle-info mr-1 text-[#59c4b4]"></i>
                 Aide rapide
             </h3>
             <ul class="list-disc pl-5 space-y-1">
-                <li><span class="font-medium">Calendrier :</span> utilisez <em>Préc./Suiv.</em> et les vues <em>Mois/Semaine/Jour</em> pour naviguer.</li>
-                <li><span class="font-medium">Événements :</span> cliquez sur un événement du calendrier pour ouvrir sa page (nouvel onglet).</li>
-                <li><span class="font-medium">Créer :</span> le bouton <em>“Créer un événement”</em> vous permet d’en proposer un nouveau.</li>
-                <li><span class="font-medium">Mes participations :</span> cliquez sur une carte “À venir” ou “Historique” pour voir le détail.</li>
-                <li><span class="font-medium">Graphique :</span> affiche le nombre d’événements auxquels vous participez sur les <strong>6 prochains mois</strong> (survolez une barre pour voir le détail).</li>
+                <li><span class="font-medium">Calendrier :</span> utilisez <em>Préc./Suiv.</em> et les vues <em>Mois/Semaine/Jour</em>
+                    pour naviguer.
+                </li>
+                <li><span class="font-medium">Événements :</span> cliquez sur un événement du calendrier pour ouvrir sa
+                    page (nouvel onglet).
+                </li>
+                <li><span class="font-medium">Créer :</span> le bouton <em>“Créer un événement”</em> est désactivé
+                    lorsque vous avez {{ maxActiveSlots }} événements <strong>futurs & actifs</strong>.
+                </li>
+                <li><span class="font-medium">Mes participations :</span> cliquez sur une carte “À venir” ou
+                    “Historique” pour voir le détail.
+                </li>
+                <li><span class="font-medium">Graphique :</span> affiche le nombre d’événements auxquels vous participez
+                    sur les <strong>6 prochains mois</strong>.
+                </li>
             </ul>
         </div>
-
-
-
     </AuthenticatedLayout>
 </template>
 
@@ -627,7 +717,7 @@ const submitContact = () => {
     overflow: hidden !important;
 }
 
-/* Boutons de navigation avec dégradé vert personnalisé */
+/* Boutons de navigation */
 .fc-button {
     background: linear-gradient(135deg, #59c4b4 0%, #4db3a3 100%) !important;
     border: none !important;
@@ -637,12 +727,12 @@ const submitContact = () => {
     font-size: 11px !important;
     font-weight: 600 !important;
     transition: all 0.3s ease !important;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 
 .fc-button:hover {
     transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
     background: linear-gradient(135deg, #4db3a3 0%, #42a392 100%) !important;
 }
 
@@ -687,7 +777,7 @@ const submitContact = () => {
     font-weight: 700 !important;
 }
 
-/* Événements dans le calendrier avec dégradé orange personnalisé */
+/* Événements */
 .fc-event {
     background: linear-gradient(135deg, #ffb347 0%, #ff9500 100%) !important;
     border: none !important;
@@ -697,14 +787,14 @@ const submitContact = () => {
     font-weight: 500 !important;
     padding: 2px 6px !important;
     margin: 1px 2px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
     transition: all 0.2s ease !important;
     cursor: pointer !important;
 }
 
 .fc-event:hover {
     transform: scale(1.02) !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
     background: linear-gradient(135deg, #ff9500 0%, #e6850e 100%) !important;
 }
 
@@ -712,7 +802,7 @@ const submitContact = () => {
     font-weight: 600 !important;
 }
 
-/* Lien "more" pour les événements supplémentaires */
+/* Lien "more" */
 .fc-more-link {
     color: #ffb347 !important;
     font-weight: 600 !important;
@@ -735,7 +825,7 @@ const submitContact = () => {
     padding: 6px 4px !important;
 }
 
-/* Responsive pour mobile */
+/* Responsive */
 @media (max-width: 640px) {
     .fc-button {
         padding: 4px 6px !important;
@@ -752,7 +842,6 @@ const submitContact = () => {
     }
 }
 
-/* Responsive pour tablette */
 @media (max-width: 1024px) {
     .fc-button {
         padding: 5px 8px !important;
@@ -764,12 +853,11 @@ const submitContact = () => {
     }
 }
 
-/* Animation pour les cartes d'événements */
+/* Animations / scrollbars */
 .transition-all {
     transition: all 0.2s ease-in-out;
 }
 
-/* Scrollbar personnalisée pour la section événements */
 .overflow-y-auto::-webkit-scrollbar {
     width: 6px;
 }
