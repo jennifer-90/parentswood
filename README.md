@@ -13,26 +13,6 @@
 - Permettre aux utilisateurs de créer leurs propres événements et d’y inviter d'autres membres.
 - Assurer un cadre sécurisé, avec une modération et des rôles d'administration différenciés.
 
-### ** Fonctionnalités principales:
-
-- Inscription et authentification (avec gestion de rôles : User, Admin, Super-admin)
-- Création, affichage et participation à des événements
-- Système de commentaires lié aux événements
-- Panneau d’administration avec :
-    - Gestion des utilisateurs (activation, anonymisation, modification de rôle)
-    - Validation ou refus des événements avant publication
-- Interface utilisateur construite avec **Vue.js** et **Inertia.js**
-- Backend robuste sous **Laravel 11**, avec système de permissions
-
-### ** Pourquoi ce projet ?
-
-Développée dans le cadre de mon **travail de fin d’études**, cette application reflète à la fois :
-- un besoin personnel (en tant que maman solo),
-- une volonté de résoudre une problématique réelle de société,
-- et une envie d’apprendre concrètement le développement full-stack avec Laravel et Vue.js.
-
----
-
 ## 🔵 Introduction
 
 Ce projet utilise **Laravel 11** pour le backend et **Vue.js 3** pour le frontend. Il est conçu pour être facilement
@@ -52,17 +32,18 @@ Avant de commencer, assurez-vous d'avoir les outils suivants installés sur votr
 
 🔹4. **Git** (pour cloner le projet) ➡️ [Installer Git](https://git-scm.com/)
 
-🔹5. **Base de données** : MySQL
+🔹5. **Base de données** : MySQL (version 8.0 ou version supérieure)
 
-🔹6. **Environnement de développement** (facultatif) : ➡️ Par
-exemple, [Laragon](https://laragon.org/), [WampServer](https://www.wampserver.com/),
-ou [XAMPP](https://www.apachefriends.org/index.html).
+🔹6. **Environnement de développement** : ➡️ Par
+exemple: [WampServer](https://www.wampserver.com/),
+
 
 ---
 
 ## 🔵 Installation
 
-### 🔹 1. Cloner le projet depuis GitHub
+
+### 🔹 1. Cloner le projet depuis GitHub dans votre dossier "wamp64/www" (pour ceux qui utilise wampServer)
 
 ```bash
   git clone https://github.com/jennifer-90/parentswood.git
