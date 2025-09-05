@@ -43,7 +43,7 @@ exemple: [WampServer](https://www.wampserver.com/),
 ## 🔵 Installation
 
 
-### 🔹 1. Cloner le projet depuis GitHub dans votre dossier "wamp64/www" (pour ceux qui utilise wampServer)
+### 🔹 1. Cloner le projet depuis GitHub dans votre dossier "wamp64/www" (pour ceux qui utilisent wampServer)
 
 ```bash
   git clone https://github.com/jennifer-90/parentswood.git
