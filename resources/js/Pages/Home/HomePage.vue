@@ -39,7 +39,7 @@
                     <div class="relative w-full max-w-md">
                         <div
                             class="absolute -inset-4 bg-gradient-to-r from-[#FFE8C6] to-[#E3F4E0] rounded-2xl transform rotate-1"></div>
-                        <img src="/images/picture_home.png" alt="Famille heureuse"
+                        <img src="/images/picture_home.png" alt="Communauté parents solos"
                              class="relative rounded-xl shadow-2xl w-full h-auto border-4 border-white">
                     </div>
                 </div>

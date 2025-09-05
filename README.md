@@ -122,35 +122,15 @@ DB_PASSWORD=''
   php artisan storage:link
 ```
 
-### 🔹9. Lancer le serveur de développement Laravel
 
-```bash
-  php artisan serve
-```
-
-##### - Cela démarrera le serveur à l'adresse : http://localhost:8000.
-
-### 🔹10. Lancer le serveur Vite pour les assets front-end
-
-##### - Dans un autre terminal, exécutez:
-
-```bash
-  npm run dev
-```
-
-##### - Cela permet de compiler les fichiers front-end et d'activer le rechargement automatique.
-
----
-
-
-## 11. ✉️ Configurer l’envoi d’e-mails (Gmail SMTP)
+### 🔹9. ✉️ Configurer l’envoi d’e-mails (Gmail SMTP)
 
 > En dev, vous pouvez garder `MAIL_MAILER=log` pour éviter d’envoyer de vrais emails.
 > Si vous voulez envoyer via Gmail, suivez ces étapes :
 
 ### A) Activer la 2FA et créer un mot de passe d’application Gmail
-1) Ouvrez votre compte Google → **Security** (Sécurité). 
-==> 👉 https://myaccount.google.com/
+1) Ouvrez votre compte Google → **Security** (Sécurité).
+   ==> 👉 https://myaccount.google.com/
 2) Activez **2-Step Verification** (Validation en 2 étapes). ==> 👉 https://myaccount.google.com/signinoptions/two-step-verification
 3) Dans **App passwords** (Mots de passe d’application) : ==>👉  https://myaccount.google.com/apppasswords
     - *Select app* : **Mail**
@@ -167,7 +147,7 @@ MAIL_HOST=smtp.gmail.com
 MAIL_PORT=587
 MAIL_ENCRYPTION=tls
 ```
-Attention de mettre vos données à vous : 
+Attention de mettre vos données à vous :
 ```
 # !!!! VOS DONNéE A VOUS !!!!
 MAIL_USERNAME= 👉 VOTRE_EMAIL_GMAIL@exemple.com
@@ -175,6 +155,28 @@ MAIL_PASSWORD= 👉 (ETAPE 3)>>> Votre mot de passe de 16 caractères généré 
 MAIL_FROM_ADDRESS= 👉 VOTRE_EMAIL_GMAIL@exemple.com
 MAIL_FROM_NAME= 👉 "Parentswood"
 ```
+
+
+
+### 🔹10. Lancer le serveur de développement Laravel
+
+```bash
+  php artisan serve
+```
+
+##### - Cela démarrera le serveur à l'adresse : http://localhost:8000.
+
+### 🔹11. Lancer le serveur Vite pour les assets front-end
+
+##### - Dans un autre terminal, exécutez:
+
+```bash
+  npm run dev
+```
+
+##### - Cela permet de compiler les fichiers front-end et d'activer le rechargement automatique.
+
+---
 
 
 

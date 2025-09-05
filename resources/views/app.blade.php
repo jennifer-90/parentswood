@@ -2,6 +2,12 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 
     <head>
+        <title>ParentsWood — Communauté de parents solos & événements près de chez vous</title>
+        <meta name="description" content="ParentsWood aide les parents solos à se rencontrer autour d’événements conviviaux près de chez eux. Rejoignez une communauté bienveillante." />
+        <meta name="keywords" content="parents solos, communauté, événements parents, rencontres, entraide, activités enfants">
+
+        <link rel="canonical" href="https://www.parentswood.be/" />
+
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <!-- <link rel="stylesheet" href="path/to/font-awesome/css/font-awesome.min.css"> -->
