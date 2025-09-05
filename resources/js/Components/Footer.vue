@@ -56,33 +56,14 @@ const resolvedUrls = computed(() => ({
                 <nav aria-labelledby="footer-about-title">
                     <h4 id="footer-about-title" class="text-sm font-semibold text-gray-900 tracking-wider">À propos</h4>
                     <ul class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                        <li>
-                            <a href="#" class="text-gray-600 hover:text-[#59c4b4] transition-colors">
-                                <i class="fa-solid fa-people-group mr-2 text-xs opacity-70"></i> Notre mission
-                            </a>
-                        </li>
 
                         <li>
-                            <a :href="resolvedUrls.legal" class="text-gray-600 hover:text-[#59c4b4] transition-colors">
+
                                 <i class="fa-solid fa-file-contract mr-2 text-xs opacity-70"></i> Mentions légales
-                            </a>
-                        </li>
 
-                        <li>
-                            <a :href="resolvedUrls.privacy" class="text-gray-600 hover:text-[#59c4b4] transition-colors">
-                                <i class="fa-solid fa-user-shield mr-2 text-xs opacity-70"></i> Vie privée
-                            </a>
                         </li>
                         <li>
-                            <a :href="resolvedUrls.terms" class="text-gray-600 hover:text-[#59c4b4] transition-colors">
                                 <i class="fa-solid fa-scale-balanced mr-2 text-xs opacity-70"></i> Conditions d’utilisation
-                            </a>
-                        </li>
-
-                        <li>
-                            <a href="#" class="text-gray-600 hover:text-[#59c4b4] transition-colors">
-                                <i class="fa-solid fa-flag mr-2 text-xs opacity-70"></i> Charte de la communauté
-                            </a>
                         </li>
 
                     </ul>
@@ -111,13 +92,6 @@ const resolvedUrls = computed(() => ({
                 <p class="text-sm text-gray-500">
                     © {{ year }} {{ appName }} — Tous droits réservés.
                 </p>
-                <div class="flex items-center gap-4 text-sm">
-                    <a :href="resolvedUrls.privacy" class="text-gray-500 hover:text-[#59c4b4] transition-colors">Vie privée</a>
-                    <span aria-hidden="true" class="text-gray-300">•</span>
-                    <a :href="resolvedUrls.terms" class="text-gray-500 hover:text-[#59c4b4] transition-colors">Conditions</a>
-                    <span aria-hidden="true" class="text-gray-300">•</span>
-                    <a :href="resolvedUrls.legal" class="text-gray-500 hover:text-[#59c4b4] transition-colors">Mentions légales</a>
-                </div>
             </div>
         </section>
     </footer>
