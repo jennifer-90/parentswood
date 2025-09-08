@@ -47,6 +47,13 @@ const submit = async () => {
                         <TextInput id="password" type="password" v-model="form.password" required
                                    placeholder="Entrez votre mot de passe" autocomplete="current-password"/>
                         <InputError :message="form.errors.password"/>
+                        <div class="mt-2 text-right">
+                            <Link href="#" class="forgot-link">
+                                Mot de passe oublié ?
+                            </Link>
+                        </div>
+
+
                     </div>
                 </div>
 
@@ -92,4 +99,17 @@ input {
     border: 1px solid #ccc;
     border-radius: 5px;
 }
+
+.forgot-link {
+    font-size: 0.875rem;       /* 14px */
+    color: #1abc9c;
+    text-decoration: underline; /* Soulignement permanent */
+    transition: color 0.2s ease;
+}
+
+.forgot-link:hover {
+    color: #15967f; /* un peu plus foncé au survol */
+}
+
+
 </style>
